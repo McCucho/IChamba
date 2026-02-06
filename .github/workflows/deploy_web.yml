@@ -35,6 +35,11 @@ jobs:
       - name: Build web
         run: flutter build web --release --base-href "/IChamba/" --pwa-strategy=none
 
+      - name: Bust main.dart.js cache
+        env:
+          BUILD_SHA: ${{ github.sha }}
+        run: sed -i "s/main.dart.js/main.dart.js?v=$BUILD_SHA/" build/web/flutter_bootstrap.js
+
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
