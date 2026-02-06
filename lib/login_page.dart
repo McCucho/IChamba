@@ -42,11 +42,7 @@ class _LoginPageState extends State<LoginPage> {
       if (response.user != null) {
         await CredentialsStore.saveLastEmail(_emailController.text.trim());
         if (!mounted) return;
-        Navigator.pushNamedAndRemoveUntil(
-          context,
-          '/main',
-          (route) => false,
-        );
+        Navigator.pushNamedAndRemoveUntil(context, '/main', (route) => false);
       } else {
         setState(() {
           _error = 'No se pudo iniciar sesion.';
