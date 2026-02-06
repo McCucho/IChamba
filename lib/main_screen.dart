@@ -8,7 +8,7 @@ class MainScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Ichamba'),
+        title: const Text('Ichamba v20260206-3'),
         actions: [
           IconButton(
             tooltip: 'Salir',
