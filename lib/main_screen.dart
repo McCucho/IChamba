@@ -15,11 +15,7 @@ class MainScreen extends StatelessWidget {
             onPressed: () async {
               await SupabaseService.signOut();
               if (!context.mounted) return;
-              Navigator.pushNamedAndRemoveUntil(
-                context,
-                '/',
-                (route) => false,
-              );
+              Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
             },
             icon: const Icon(Icons.logout),
           ),
