@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:ichamba/services/supabase_service.dart';
 
 class MainScreen extends StatelessWidget {
-  const MainScreen({super.key});
+  const MainScreen({super.key, required this.isAuthenticated});
+
+  final bool isAuthenticated;
 
   @override
   Widget build(BuildContext context) {
@@ -10,45 +12,58 @@ class MainScreen extends StatelessWidget {
       appBar: AppBar(
         title: const Text('Ichamba'),
         actions: [
-          IconButton(
-            tooltip: 'Salir',
-            onPressed: () async {
-              await SupabaseService.signOut();
-              if (!context.mounted) return;
-              Navigator.pushNamedAndRemoveUntil(
-                context,
-                '/',
-                (route) => false,
-              );
-            },
-            icon: const Icon(Icons.logout),
-          ),
+          if (isAuthenticated)
+            IconButton(
+              tooltip: 'Salir',
+              onPressed: () async {
+                await SupabaseService.signOut();
+                if (!context.mounted) return;
+                Navigator.pushNamedAndRemoveUntil(
+                  context,
+                  '/',
+                  (route) => false,
+                );
+              },
+              icon: const Icon(Icons.logout),
+            ),
         ],
       ),
       body: LayoutBuilder(
         builder: (context, constraints) {
           final sidebarWidth = constraints.maxWidth * 0.25;
-          return Row(
+          return Stack(
             children: [
-              SizedBox(
-                width: sidebarWidth,
-                child: Container(
-                  color: const Color(0xFFEFF2F5),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: _buildSidebarButtons(context),
+              Row(
+                children: [
+                  SizedBox(
+                    width: sidebarWidth,
+                    child: Container(
+                      color: const Color(0xFFEFF2F5),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: _buildSidebarButtons(context),
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: Container(
+                      color: Colors.white,
+                      child: ListView(
+                        padding: const EdgeInsets.all(16),
+                        children: _buildMenuItems(),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              if (!isAuthenticated)
+                Positioned.fill(
+                  child: Container(
+                    color: Colors.white.withOpacity(0.85),
+                    alignment: Alignment.center,
+                    child: _AuthPrompt(),
                   ),
                 ),
-              ),
-              Expanded(
-                child: Container(
-                  color: Colors.white,
-                  child: ListView(
-                    padding: const EdgeInsets.all(16),
-                    children: _buildMenuItems(),
-                  ),
-                ),
-              ),
             ],
           );
         },
@@ -92,5 +107,36 @@ class MainScreen extends StatelessWidget {
           ),
         )
         .toList();
+  }
+}
+
+class _AuthPrompt extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      elevation: 3,
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'Inicia sesion para continuar',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: () => Navigator.pushNamed(context, '/login'),
+              child: const Text('Iniciar sesion'),
+            ),
+            const SizedBox(height: 8),
+            OutlinedButton(
+              onPressed: () => Navigator.pushNamed(context, '/register'),
+              child: const Text('Registrarse'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
