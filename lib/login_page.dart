@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:ichamba/main_screen.dart';
 import 'package:ichamba/services/credentials_store.dart';
 import 'package:ichamba/services/supabase_service.dart';
 
@@ -42,7 +43,10 @@ class _LoginPageState extends State<LoginPage> {
       if (response.user != null) {
         await CredentialsStore.saveLastEmail(_emailController.text.trim());
         if (!mounted) return;
-        Navigator.pushNamedAndRemoveUntil(context, '/main', (route) => false);
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (_) => const MainScreen()),
+          (route) => false,
+        );
       } else {
         setState(() {
           _error = 'No se pudo iniciar sesion.';
