@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'dart:typed_data';
 import 'services/supabase_service.dart';
 import 'services/selected_image_store.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'profile_page.dart';
 import 'publish_page.dart';
 
@@ -16,6 +17,7 @@ class _MainScreenState extends State<MainScreen> {
   int _selectedIndex = 0; // 0=main,1=profile,2.. others
   List<Map<String, dynamic>> _posts = [];
   bool _loadingPosts = false;
+  String? _appVersion;
   VoidCallback? _postsListener;
 
   @override
@@ -26,6 +28,19 @@ class _MainScreenState extends State<MainScreen> {
     // Listen for posts changes and refresh feed
     _postsListener = _onPostsChanged;
     SelectedImageStore.instance.postsVersion.addListener(_postsListener!);
+    _loadAppVersion();
+  }
+
+  Future<void> _loadAppVersion() async {
+    try {
+      final info = await PackageInfo.fromPlatform();
+      if (!mounted) return;
+      setState(() {
+        _appVersion = '${info.version}+${info.buildNumber}';
+      });
+    } catch (_) {
+      // ignore
+    }
   }
 
   void _onPostsChanged() {
@@ -68,17 +83,33 @@ class _MainScreenState extends State<MainScreen> {
               alignment: Alignment.center,
               children: [
                 Center(
-                  child: Text(
-                    'Ichamba',
-                    style: TextStyle(
-                      color: Colors.brown[700],
-                      fontStyle: FontStyle.italic,
-                      fontSize: 22,
-                      fontWeight: FontWeight.w600,
-                      shadows: [
-                        Shadow(blurRadius: 2, color: Colors.brown.shade200),
-                      ],
-                    ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'Ichamba',
+                        style: TextStyle(
+                          color: Colors.brown[700],
+                          fontStyle: FontStyle.italic,
+                          fontSize: 22,
+                          fontWeight: FontWeight.w600,
+                          shadows: [
+                            Shadow(blurRadius: 2, color: Colors.brown.shade200),
+                          ],
+                        ),
+                      ),
+                      if (_appVersion != null)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 2.0),
+                          child: Text(
+                            'v${_appVersion}',
+                            style: TextStyle(
+                              color: Colors.brown[400],
+                              fontSize: 11,
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
                 ),
                 Positioned(
