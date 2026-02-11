@@ -154,7 +154,7 @@ class _PublishPageState extends State<PublishPage> {
             onPressed: () async {
               // perform update
               await SupabaseService.updatePost(
-                postId: post['id'],
+                postId: post['auth_id'],
                 description: descController.text.trim(),
                 bytes: newImageBytes,
                 filename: newImageName,
@@ -270,7 +270,7 @@ class _PublishPageState extends State<PublishPage> {
                                 ],
                               ),
                             );
-                            if (confirm == true) await _deletePost(post['id']);
+                            if (confirm == true) await _deletePost(post['auth_id']);
                           },
                         ),
                       ],

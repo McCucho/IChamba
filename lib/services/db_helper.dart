@@ -180,7 +180,7 @@ class DBHelper {
       if (jsonStr == null) return null;
       final users = json.decode(jsonStr) as List<dynamic>;
       final found = users.firstWhere(
-        (u) => (u['id'] as int) == id,
+        (u) => (u['auth_id'] as int) == id,
         orElse: () => null,
       );
       if (found == null) return null;
@@ -214,7 +214,7 @@ class DBHelper {
           ? json.decode(jsonStr) as List<dynamic>
           : [];
       for (var u in users) {
-        if ((u['id'] as int) == id) {
+        if ((u['auth_id'] as int) == id) {
           fields.forEach((k, v) => u[k] = v);
           break;
         }

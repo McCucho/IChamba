@@ -21,83 +21,42 @@ class _RegisterPageState extends State<RegisterPage> {
   String _lastAction = '';
 
   Future<void> _register() async {
-    // Debug: handler invoked
-    debugPrint('register: handler invoked');
-
+    if (!_formKey.currentState!.validate()) return;
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
-      final email = _emailController.text.trim();
-      final password = _passwordController.text.trim();
-      final name = _nameController.text.trim();
-      final lastName = _lastNameController.text.trim();
-
-      // 1. Crear usuario
-      final response = await SupabaseService.signUp(
-        email,
-        password,
+      final res = await SupabaseService.signUp(
+        email: _emailController.text.trim(),
+        password: _passwordController.text.trim(),
+        userMetadata: {
+          'first_name': _nameController.text.trim(),
+          'last_name': _lastNameController.text.trim(),
+          'role': 'usuario',
+          'role_request': null,
+        },
       );
-      // Debugging info
-      debugPrint(
-        'signUp response: user=${response.user}, session=${response.session}',
-      );
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('signUp: user=${response.user != null}')),
-        );
-      }
-      if (response.user == null) {
-        setState(() {
-          _error = 'Error desconocido en el registro.';
+      if (res.user == null) {
+        setState(() => _error = 'Error al registrarse');
+      } else {
+        // Create profile in users table
+        await SupabaseService.upsertUser({
+          'auth_id': res.user!.id,
+          'email': _emailController.text.trim(),
+          'first_name': _nameController.text.trim(),
+          'last_name': _lastNameController.text.trim(),
+          'role': 'usuario',
+          'role_request': null,
         });
-        return;
+        
+        if (!mounted) return;
+        Navigator.of(context).pushReplacementNamed('/login');
       }
-
-      // 2. Iniciar sesión inmediatamente para obtener sesión válida
-      final signInResp = await SupabaseService.signIn(email, password);
-      // Debugging info
-      debugPrint(
-        'signIn response: user=${signInResp.user}, session=${signInResp.session}',
-      );
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'signIn: user=${signInResp.user != null}, session=${signInResp.session != null}',
-            ),
-          ),
-        );
-      }
-      await CredentialsStore.saveLastEmail(email);
-
-      if (!mounted) return;
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(
-          builder: (_) => const MainScreen(),
-          settings: const RouteSettings(arguments: {'showSidebar': true}),
-        ),
-        (route) => false,
-      );
-      return;
-    } catch (e, st) {
-      debugPrint('register: exception: $e');
-      debugPrint('$st');
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('register exception: $e')));
-      }
-      setState(() {
-        _error = e.toString();
-      });
+    } catch (e) {
+      setState(() => _error = e.toString());
     } finally {
-      if (mounted) {
-        setState(() {
-          _loading = false;
-        });
-      }
+      setState(() => _loading = false);
     }
   }
 

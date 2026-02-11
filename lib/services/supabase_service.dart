@@ -19,8 +19,16 @@ class SupabaseService {
   static SupabaseClient get client => _client ?? Supabase.instance.client;
 
   // Auth helpers
-  static Future<AuthResponse> signUp(String email, String password) async {
-    return await client.auth.signUp(email: email, password: password);
+  static Future<AuthResponse> signUp({
+    required String email,
+    required String password,
+    Map<String, dynamic>? userMetadata,
+  }) async {
+    return await client.auth.signUp(
+      email: email,
+      password: password,
+      data: userMetadata,
+    );
   }
 
   static Future<AuthResponse> signIn(String email, String password) async {
@@ -69,26 +77,37 @@ class SupabaseService {
     final current = client.auth.currentUser;
     final payload = Map<String, dynamic>.from(user);
     // If caller didn't provide an id, set it to the authenticated user's id
-    if ((payload['auth_id'] == null || payload['id'].toString().isEmpty) &&
+    if ((payload['auth_id'] == null || payload['auth_id'].toString().isEmpty) &&
         current != null) {
       payload['auth_id'] = current.id;
     }
-    await client.from('users').upsert(payload).select().maybeSingle();
+
+    try {
+      await client.from('users').upsert(payload, onConflict: 'auth_id');
+    } catch (e) {
+      print('❌ Error en upsertUser: $e');
+      print('Payload: $payload');
+      rethrow;
+    }
   }
 
   /// Fetch the current user's row from `users` table (by auth id).
-  static Future<Map<String, dynamic>?> fetchUserProfile([
-    String? userId,
-  ]) async {
-    final uid = userId ?? client.auth.currentUser?.id;
-    if (uid == null) return null;
-    final resp = await client
-        .from('users')
-        .select()
-        .eq('id', uid)
-        .maybeSingle();
-    if (resp == null) return null;
-    return Map<String, dynamic>.from(resp as Map);
+  static Future<Map<String, dynamic>?> fetchUserProfile() async {
+    final userId = client.auth.currentUser?.id;
+    if (userId == null) return null;
+
+    try {
+      final response = await client
+          .from('users')
+          .select()
+          .eq('auth_id', userId)
+          .maybeSingle();
+
+      return response;
+    } catch (e) {
+      print('Error fetching user profile: $e');
+      rethrow;
+    }
   }
 
   // Posts helpers
@@ -106,9 +125,11 @@ class SupabaseService {
     final path = 'posts/${DateTime.now().millisecondsSinceEpoch}_$filename';
     // Upload binary to bucket (ensure bucket exists). Provide clearer error
     try {
+      print("LLEGAUBLICAr");
       await client.storage.from(_postsBucket).uploadBinary(path, bytes);
     } catch (e) {
       final msg = e.toString();
+      print("LLEGAUBLICAr2");
       if (msg.contains('Bucket') ||
           msg.contains('not found') ||
           msg.contains('404')) {
@@ -127,11 +148,14 @@ class SupabaseService {
       'created_at': DateTime.now().toIso8601String(),
       'user_id': client.auth.currentUser?.id,
     };
+    print("LLEGAUBLICAr3");
 
     try {
+      print("LLEGAUBLICAr4");
       await client.from('posts').insert(post).select().maybeSingle();
     } catch (e) {
       final msg = e.toString();
+      print("LLEGAUBLICAr5");
       if (msg.contains('row level security') ||
           msg.contains('violates row-level security') ||
           msg.contains('RLS')) {
