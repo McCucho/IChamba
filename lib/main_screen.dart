@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'dart:typed_data';
 import 'services/supabase_service.dart';
+import 'services/selected_image_store.dart';
 import 'profile_page.dart';
+import 'publish_page.dart';
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
@@ -11,11 +14,43 @@ class MainScreen extends StatefulWidget {
 
 class _MainScreenState extends State<MainScreen> {
   int _selectedIndex = 0; // 0=main,1=profile,2.. others
+  List<Map<String, dynamic>> _posts = [];
+  bool _loadingPosts = false;
+  VoidCallback? _postsListener;
 
   @override
   void initState() {
     super.initState();
-    // Sidebar stays visible at all times; nothing to initialize here.
+    // Sidebar stays visible at all times; load public posts for feed.
+    _loadPosts();
+    // Listen for posts changes and refresh feed
+    _postsListener = _onPostsChanged;
+    SelectedImageStore.instance.postsVersion.addListener(_postsListener!);
+  }
+
+  void _onPostsChanged() {
+    _loadPosts();
+  }
+
+  @override
+  void dispose() {
+    if (_postsListener != null) {
+      SelectedImageStore.instance.postsVersion.removeListener(_postsListener!);
+    }
+    super.dispose();
+  }
+
+  Future<void> _loadPosts() async {
+    setState(() => _loadingPosts = true);
+    try {
+      final posts = await SupabaseService.fetchPosts();
+      if (!mounted) return;
+      setState(() => _posts = posts);
+    } catch (e) {
+      // ignore
+    } finally {
+      if (mounted) setState(() => _loadingPosts = false);
+    }
   }
 
   @override
@@ -82,7 +117,41 @@ class _MainScreenState extends State<MainScreen> {
                           padding: const EdgeInsets.symmetric(vertical: 12),
                           child: Column(
                             mainAxisAlignment: MainAxisAlignment.start,
-                            children: _buildSidebarButtons(context),
+                            children: [
+                              // Show selected image as avatar at top of sidebar if present
+                              ValueListenableBuilder<Uint8List?>(
+                                valueListenable:
+                                    SelectedImageStore.instance.imageNotifier,
+                                builder: (context, bytes, _) {
+                                  if (bytes == null) {
+                                    return Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 8.0,
+                                      ),
+                                      child: CircleAvatar(
+                                        radius: 36,
+                                        backgroundColor: Colors.brown[200],
+                                        child: const Icon(
+                                          Icons.person,
+                                          size: 36,
+                                        ),
+                                      ),
+                                    );
+                                  }
+                                  return Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 8.0,
+                                    ),
+                                    child: CircleAvatar(
+                                      radius: 36,
+                                      backgroundImage: MemoryImage(bytes),
+                                    ),
+                                  );
+                                },
+                              ),
+                              const SizedBox(height: 8),
+                              ..._buildSidebarButtons(context),
+                            ],
                           ),
                         ),
                       ),
@@ -156,9 +225,62 @@ class _MainScreenState extends State<MainScreen> {
     switch (_selectedIndex) {
       case 1:
         return const ProfilePage();
+      case 3:
+        return const PublishPage();
       case 0:
       default:
-        return _buildIconGrid();
+        return RefreshIndicator(
+          onRefresh: _loadPosts,
+          child: _loadingPosts
+              ? const Center(child: CircularProgressIndicator())
+              : _posts.isEmpty
+              ? ListView(
+                  children: const [
+                    Padding(
+                      padding: EdgeInsets.all(16),
+                      child: Text('No hay publicaciones aún.'),
+                    ),
+                  ],
+                )
+              : ListView.builder(
+                  itemCount: _posts.length,
+                  itemBuilder: (context, index) {
+                    final post = _posts[index];
+                    return Card(
+                      margin: const EdgeInsets.symmetric(vertical: 8),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (post['image_url'] != null)
+                            Image.network(
+                              post['image_url'] as String,
+                              width: double.infinity,
+                              height: 220,
+                              fit: BoxFit.cover,
+                            ),
+                          Padding(
+                            padding: const EdgeInsets.all(12.0),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(post['description'] ?? ''),
+                                const SizedBox(height: 8),
+                                Text(
+                                  post['created_at'] ?? '',
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.black54,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+        );
     }
   }
 
@@ -188,7 +310,15 @@ class _MainScreenState extends State<MainScreen> {
         'tooltip': 'Notificaciones',
         'action': () {},
       },
-      {'icon': Icons.calendar_month, 'tooltip': 'Calendario', 'action': () {}},
+      {
+        'icon': Icons.cloud_upload,
+        'tooltip': 'PUBLICAR',
+        'action': () {
+          setState(() {
+            _selectedIndex = 3;
+          });
+        },
+      },
       {
         'icon': Icons.chat_bubble_outline,
         'tooltip': 'Mensajes',

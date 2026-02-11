@@ -22,15 +22,29 @@ class _ProfilePageState extends State<ProfilePage> {
   @override
   void initState() {
     super.initState();
-    final user = SupabaseService.currentUser();
-    if (user != null) {
-      _nameController.text = user.userMetadata?['first_name'] ?? '';
-      _lastNameController.text = user.userMetadata?['last_name'] ?? '';
-      _emailController.text = user.email ?? '';
-      _phoneController.text = user.userMetadata?['phone'] ?? '';
-      _cityController.text = user.userMetadata?['city'] ?? '';
-      _neighborhoodController.text = user.userMetadata?['neighborhood'] ?? '';
-    }
+    // Load profile from `users` table if present; fallback to auth user metadata
+    SupabaseService.fetchUserProfile().then((row) {
+      if (!mounted) return;
+      if (row != null) {
+        _nameController.text = row['first_name'] ?? '';
+        _lastNameController.text = row['last_name'] ?? '';
+        _emailController.text = row['email'] ?? '';
+        _phoneController.text = row['phone'] ?? '';
+        _cityController.text = row['city'] ?? '';
+        _neighborhoodController.text = row['neighborhood'] ?? '';
+      } else {
+        final user = SupabaseService.currentUser();
+        if (user != null) {
+          _nameController.text = user.userMetadata?['first_name'] ?? '';
+          _lastNameController.text = user.userMetadata?['last_name'] ?? '';
+          _emailController.text = user.email ?? '';
+          _phoneController.text = user.userMetadata?['phone'] ?? '';
+          _cityController.text = user.userMetadata?['city'] ?? '';
+          _neighborhoodController.text =
+              user.userMetadata?['neighborhood'] ?? '';
+        }
+      }
+    });
   }
 
   @override
@@ -48,7 +62,8 @@ class _ProfilePageState extends State<ProfilePage> {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _loading = true);
     try {
-      final data = {
+      final current = SupabaseService.currentUser();
+      final data = <String, dynamic>{
         'first_name': _nameController.text.trim(),
         'last_name': _lastNameController.text.trim(),
         'email': _emailController.text.trim(),
@@ -56,10 +71,10 @@ class _ProfilePageState extends State<ProfilePage> {
         'city': _cityController.text.trim(),
         'neighborhood': _neighborhoodController.text.trim(),
       };
-      // Use upsert to insert or update user record
+      // Ensure the upsert includes the auth id so RLS allows the operation
+      if (current?.id != null) data['id'] = current!.id;
       await SupabaseService.upsertUser(data);
       // Optionally save last email placeholder
-      final current = SupabaseService.currentUser();
       if (current?.email != null) {
         await CredentialsStore.saveLastEmail(current!.email!);
       }

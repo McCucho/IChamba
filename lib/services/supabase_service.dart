@@ -1,7 +1,11 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'dart:typed_data';
 
 class SupabaseService {
   static SupabaseClient? _client;
+  // Use the 'publicaciones' bucket created in Supabase Storage.
+  // Change this value if you prefer a different bucket name.
+  static const String _postsBucket = 'publicaciones';
 
   static Future<void> init({
     required String url,
@@ -62,6 +66,202 @@ class SupabaseService {
   /// Insert or update a user row using upsert. Expects a map with identifying
   /// fields (e.g. 'id' or unique constraint) to perform update when present.
   static Future<void> upsertUser(Map<String, dynamic> user) async {
-    await client.from('users').upsert(user).select().maybeSingle();
+    final current = client.auth.currentUser;
+    final payload = Map<String, dynamic>.from(user);
+    // If caller didn't provide an id, set it to the authenticated user's id
+    if ((payload['id'] == null || payload['id'].toString().isEmpty) &&
+        current != null) {
+      payload['id'] = current.id;
+    }
+    await client.from('users').upsert(payload).select().maybeSingle();
+  }
+
+  /// Fetch the current user's row from `users` table (by auth id).
+  static Future<Map<String, dynamic>?> fetchUserProfile([
+    String? userId,
+  ]) async {
+    final uid = userId ?? client.auth.currentUser?.id;
+    if (uid == null) return null;
+    final resp = await client
+        .from('users')
+        .select()
+        .eq('id', uid)
+        .maybeSingle();
+    if (resp == null) return null;
+    return Map<String, dynamic>.from(resp as Map);
+  }
+
+  // Posts helpers
+  static Future<void> uploadPostImageAndCreate({
+    required Uint8List bytes,
+    required String filename,
+    required String description,
+  }) async {
+    final user = client.auth.currentUser;
+    if (user == null) {
+      throw Exception(
+        'Usuario no autenticado. Inicia sesión antes de publicar.',
+      );
+    }
+    final path = 'posts/${DateTime.now().millisecondsSinceEpoch}_$filename';
+    // Upload binary to bucket (ensure bucket exists). Provide clearer error
+    try {
+      await client.storage.from(_postsBucket).uploadBinary(path, bytes);
+    } catch (e) {
+      final msg = e.toString();
+      if (msg.contains('Bucket') ||
+          msg.contains('not found') ||
+          msg.contains('404')) {
+        throw Exception(
+          "Supabase Storage bucket '$_postsBucket' not found (404). Create the bucket in Supabase Storage or update SupabaseService to use an existing bucket.",
+        );
+      }
+      rethrow;
+    }
+    final url = client.storage.from(_postsBucket).getPublicUrl(path);
+
+    final post = {
+      'description': description,
+      'image_url': url,
+      'storage_path': path,
+      'created_at': DateTime.now().toIso8601String(),
+      'user_id': client.auth.currentUser?.id,
+    };
+
+    try {
+      await client.from('posts').insert(post).select().maybeSingle();
+    } catch (e) {
+      final msg = e.toString();
+      if (msg.contains('row level security') ||
+          msg.contains('violates row-level security') ||
+          msg.contains('RLS')) {
+        throw Exception(
+          'Insert blocked by Row Level Security (RLS).\n'
+          'Ensure your `posts` table has a policy that allows authenticated users to insert their own rows.\n'
+          'Example SQL:\n'
+          "-- enable RLS\nALTER TABLE public.posts ENABLE ROW LEVEL SECURITY;\n"
+          "-- allow authenticated users to insert when auth.uid() == new.user_id\n"
+          "CREATE POLICY allow_insert_authenticated ON public.posts FOR INSERT WITH CHECK (auth.uid() = user_id AND auth.role() = 'authenticated');",
+        );
+      }
+      rethrow;
+    }
+  }
+
+  static Future<List<Map<String, dynamic>>> fetchPosts() async {
+    final resp = await client
+        .from('posts')
+        .select()
+        .order('created_at', ascending: false);
+    return List<Map<String, dynamic>>.from(resp);
+  }
+
+  /// Fetch posts for a specific user. If [userId] is null, uses current user.
+  static Future<List<Map<String, dynamic>>> fetchUserPosts([
+    String? userId,
+  ]) async {
+    final uid = userId ?? client.auth.currentUser?.id;
+    if (uid == null) return [];
+    final resp = await client
+        .from('posts')
+        .select()
+        .eq('user_id', uid)
+        .order('created_at', ascending: false);
+    return List<Map<String, dynamic>>.from(resp);
+  }
+
+  /// Delete a post by id. Removes storage object if `storage_path` exists.
+  static Future<void> deletePost(dynamic postId) async {
+    final maybe = await client
+        .from('posts')
+        .select()
+        .eq('id', postId)
+        .maybeSingle();
+    if (maybe == null) return;
+    final Map<String, dynamic> post = Map<String, dynamic>.from(maybe as Map);
+    final storagePath = post['storage_path'] as String?;
+    final currentUser = client.auth.currentUser;
+    // enforce owner-only delete from client side to reduce RLS surprises
+    if (currentUser == null || post['user_id'] != currentUser.id) {
+      throw Exception(
+        'No tiene permiso para eliminar esta publicación (solo el autor puede eliminarla).',
+      );
+    }
+    if (storagePath != null && storagePath.isNotEmpty) {
+      try {
+        await client.storage.from(_postsBucket).remove([storagePath]);
+      } catch (_) {
+        // ignore storage delete errors
+      }
+    }
+    await client.from('posts').delete().eq('id', postId);
+  }
+
+  /// Update a post's description and optionally replace its image.
+  /// If [bytes] is provided, uploads new image and removes the old one.
+  static Future<void> updatePost({
+    required dynamic postId,
+    String? description,
+    Uint8List? bytes,
+    String? filename,
+  }) async {
+    final maybe = await client
+        .from('posts')
+        .select()
+        .eq('id', postId)
+        .maybeSingle();
+    if (maybe == null) return;
+    final Map<String, dynamic> post = Map<String, dynamic>.from(maybe as Map);
+    final currentUser = client.auth.currentUser;
+    if (currentUser == null || post['user_id'] != currentUser.id) {
+      throw Exception(
+        'No tiene permiso para editar esta publicación (solo el autor puede editarla).',
+      );
+    }
+    String? newUrl;
+    String? newStoragePath;
+    if (bytes != null && filename != null) {
+      // upload new image
+      final path = 'posts/${DateTime.now().millisecondsSinceEpoch}_$filename';
+      try {
+        await client.storage.from(_postsBucket).uploadBinary(path, bytes);
+      } catch (e) {
+        final msg = e.toString();
+        if (msg.contains('Bucket') ||
+            msg.contains('not found') ||
+            msg.contains('404')) {
+          throw Exception(
+            "Supabase Storage bucket '$_postsBucket' not found (404). Create the bucket in Supabase Storage or update SupabaseService to use an existing bucket.",
+          );
+        }
+        rethrow;
+      }
+      newUrl = client.storage.from(_postsBucket).getPublicUrl(path);
+      newStoragePath = path;
+    }
+
+    final updates = <String, dynamic>{};
+    if (description != null) updates['description'] = description;
+    if (newUrl != null) updates['image_url'] = newUrl;
+    if (newStoragePath != null) updates['storage_path'] = newStoragePath;
+
+    if (updates.isNotEmpty) {
+      await client
+          .from('posts')
+          .update(updates)
+          .eq('id', postId)
+          .select()
+          .maybeSingle();
+    }
+
+    // remove old storage if replaced
+    if (newStoragePath != null) {
+      final oldPath = post['storage_path'] as String?;
+      if (oldPath != null && oldPath.isNotEmpty) {
+        try {
+          await client.storage.from(_postsBucket).remove([oldPath]);
+        } catch (_) {}
+      }
+    }
   }
 }
