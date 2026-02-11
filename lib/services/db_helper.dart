@@ -238,7 +238,7 @@ class DBHelper {
       }
     } catch (e) {
       // ignore, init will fail later if necessary
-      print('Failed to create directory $dirPath: $e');
+      debugPrint('Failed to create directory $dirPath: $e');
     }
 
     // Re-init DB at new location

@@ -1,13 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 class SupabaseService {
-  static final FlutterSecureStorage _secure = FlutterSecureStorage();
   static SupabaseClient? _client;
-
-  // Provide your Supabase values in a .env or replace here
-  static const _envUrlKey = 'SUPABASE_URL';
-  static const _envKeyKey = 'SUPABASE_ANON_KEY';
 
   static Future<void> init({
     required String url,
@@ -18,10 +12,7 @@ class SupabaseService {
     _client = Supabase.instance.client;
   }
 
-  static SupabaseClient get client {
-    if (_client != null) return _client!;
-    return Supabase.instance.client;
-  }
+  static SupabaseClient get client => _client ?? Supabase.instance.client;
 
   // Auth helpers
   static Future<AuthResponse> signUp(String email, String password) async {
@@ -37,6 +28,23 @@ class SupabaseService {
 
   static Session? currentSession() => client.auth.currentSession;
 
+  static User? currentUser() => client.auth.currentUser;
+
+  /// Waits briefly for Supabase to restore auth state on web.
+  /// Returns true if a session or user is available within the timeout.
+  static Future<bool> waitForInitialAuth({
+    Duration timeout = const Duration(seconds: 2),
+  }) async {
+    final end = DateTime.now().add(timeout);
+    while (DateTime.now().isBefore(end)) {
+      try {
+        if (currentSession() != null || currentUser() != null) return true;
+      } catch (_) {}
+      await Future.delayed(const Duration(milliseconds: 100));
+    }
+    return currentSession() != null || currentUser() != null;
+  }
+
   static Future<void> signOut() async {
     await client.auth.signOut();
   }
@@ -44,20 +52,10 @@ class SupabaseService {
   // Simple user table helpers (Postgres)
   static Future<List<Map<String, dynamic>>> fetchUsers() async {
     final resp = await client.from('users').select();
-    if (resp == null) {
-      throw Exception('No data returned from users table');
-    }
-    if (resp is List) {
-      return List<Map<String, dynamic>>.from(resp);
-    } else {
-      throw Exception('Unexpected data format from users table');
-    }
+    return List<Map<String, dynamic>>.from(resp);
   }
 
   static Future<void> createUser(Map<String, dynamic> user) async {
-    final resp = await client.from('users').insert(user).select().single();
-    if (resp == null) {
-      throw Exception('Failed to create user');
-    }
+    await client.from('users').insert(user).select().single();
   }
 }

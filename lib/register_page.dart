@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'services/credentials_store.dart';
 import 'services/supabase_service.dart';
+import 'main_screen.dart';
 
 class RegisterPage extends StatefulWidget {
-  const RegisterPage({Key? key}) : super(key: key);
+  const RegisterPage({super.key});
 
   @override
   State<RegisterPage> createState() => _RegisterPageState();
@@ -14,35 +16,81 @@ class _RegisterPageState extends State<RegisterPage> {
   final _passwordController = TextEditingController();
   bool _loading = false;
   String? _error;
+  String _lastAction = '';
 
   Future<void> _register() async {
+    // Debug: handler invoked
+    debugPrint('register: handler invoked');
+
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
-      final response = await SupabaseService.signUp(
-        _emailController.text.trim(),
-        _passwordController.text.trim(),
+      final email = _emailController.text.trim();
+      final password = _passwordController.text.trim();
+
+      // 1. Crear usuario
+      final response = await SupabaseService.signUp(email, password);
+      // Debugging info
+      debugPrint(
+        'signUp response: user=${response.user}, session=${response.session}',
       );
-      if (response.user != null) {
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Registro exitoso. Revisa tu email.')),
+          SnackBar(content: Text('signUp: user=${response.user != null}')),
         );
-        Navigator.pop(context);
-      } else {
+      }
+      if (response.user == null) {
         setState(() {
           _error = 'Error desconocido en el registro.';
         });
+        return;
       }
-    } catch (e) {
+
+      // 2. Iniciar sesión inmediatamente para obtener sesión válida
+      final signInResp = await SupabaseService.signIn(email, password);
+      // Debugging info
+      debugPrint(
+        'signIn response: user=${signInResp.user}, session=${signInResp.session}',
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'signIn: user=${signInResp.user != null}, session=${signInResp.session != null}',
+            ),
+          ),
+        );
+      }
+      await CredentialsStore.saveLastEmail(email);
+
+      if (!mounted) return;
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(
+          builder: (_) => const MainScreen(),
+          settings: const RouteSettings(arguments: {'showSidebar': true}),
+        ),
+        (route) => false,
+      );
+      return;
+    } catch (e, st) {
+      debugPrint('register: exception: $e');
+      debugPrint('$st');
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('register exception: $e')));
+      }
       setState(() {
         _error = e.toString();
       });
     } finally {
-      setState(() {
-        _loading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _loading = false;
+        });
+      }
     }
   }
 
@@ -72,6 +120,9 @@ class _RegisterPageState extends State<RegisterPage> {
                     ? null
                     : 'Mínimo 6 caracteres',
               ),
+              const SizedBox(height: 8),
+              if (_lastAction.isNotEmpty)
+                Text(_lastAction, style: const TextStyle(color: Colors.blue)),
               const SizedBox(height: 20),
               if (_error != null)
                 Text(_error!, style: const TextStyle(color: Colors.red)),
@@ -80,8 +131,15 @@ class _RegisterPageState extends State<RegisterPage> {
                 onPressed: _loading
                     ? null
                     : () {
+                        setState(() {
+                          _lastAction = 'Registrarse pressed';
+                        });
                         if (_formKey.currentState!.validate()) {
                           _register();
+                        } else {
+                          setState(() {
+                            _lastAction = 'Validación fallida';
+                          });
                         }
                       },
                 child: _loading
@@ -93,5 +151,12 @@ class _RegisterPageState extends State<RegisterPage> {
         ),
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
   }
 }
