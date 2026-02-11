@@ -1,3 +1,6 @@
 {
+  "workbench.startupEditor": "readme"
+}
+{
   "dart.flutterHotReloadOnSave": true
 }
