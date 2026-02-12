@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:typed_data';
 
@@ -6,6 +7,8 @@ class SupabaseService {
   // Use the 'publicaciones' bucket created in Supabase Storage.
   // Change this value if you prefer a different bucket name.
   static const String _postsBucket = 'publicaciones';
+  // Avatars bucket for profile pictures
+  static const String _avatarsBucket = 'avatars';
 
   static Future<void> init({
     required String url,
@@ -156,6 +159,53 @@ class SupabaseService {
     return List<Map<String, dynamic>>.from(resp);
   }
 
+  /// Upload a profile image to storage and save the public URL to the `users` table
+  /// The user's row is identified by `auth_id` equal to the authenticated user's id.
+  /// Returns the public URL of the uploaded image.
+  static Future<String> uploadProfileImageAndSave({
+    required Uint8List bytes,
+    required String filename,
+  }) async {
+    final user = client.auth.currentUser;
+    if (user == null) {
+      throw Exception('Usuario no autenticado. Inicia sesión primero.');
+    }
+
+    final path =
+        'avatars/${user.id}_${DateTime.now().millisecondsSinceEpoch}_$filename';
+
+    try {
+      await client.storage.from(_avatarsBucket).uploadBinary(path, bytes);
+    } catch (e) {
+      final msg = e.toString();
+      if (msg.contains('Bucket') ||
+          msg.contains('not found') ||
+          msg.contains('404')) {
+        throw Exception(
+          "Supabase Storage bucket '$_avatarsBucket' not found (404). Crea el bucket 'avatars' en Supabase Storage o actualiza el nombre en SupabaseService.",
+        );
+      }
+      rethrow;
+    }
+
+    final url = client.storage.from(_avatarsBucket).getPublicUrl(path);
+
+    // Save URL into users table (match by auth_id)
+    try {
+      await client
+          .from('users')
+          .update({'avatar_url': url})
+          .eq('auth_id', user.id);
+    } catch (e) {
+      // Not fatal: still return the URL, but surface a warning via exception
+      throw Exception(
+        'Imagen subida pero no se pudo guardar la URL en users: $e',
+      );
+    }
+
+    return url;
+  }
+
   /// Fetch posts for a specific user. If [userId] is null, uses current user.
   static Future<List<Map<String, dynamic>>> fetchUserPosts([
     String? userId,
@@ -263,5 +313,112 @@ class SupabaseService {
         } catch (_) {}
       }
     }
+  }
+
+  // ── Messaging helpers ──────────────────────────────────────────────
+
+  /// Send a message from the current user to [receiverId].
+  static Future<void> sendMessage({
+    required String receiverId,
+    required String content,
+  }) async {
+    final user = client.auth.currentUser;
+    if (user == null) throw Exception('No autenticado');
+    await client.from('messages').insert({
+      'sender_id': user.id,
+      'receiver_id': receiverId,
+      'content': content,
+    });
+  }
+
+  /// Fetch all messages in a conversation between the current user and [otherId],
+  /// ordered oldest‑first so the list scrolls naturally.
+  static Future<List<Map<String, dynamic>>> fetchConversation(
+    String otherId,
+  ) async {
+    final uid = client.auth.currentUser?.id;
+    if (uid == null) return [];
+    final resp = await client
+        .from('messages')
+        .select()
+        .or(
+          'and(sender_id.eq.$uid,receiver_id.eq.$otherId),and(sender_id.eq.$otherId,receiver_id.eq.$uid)',
+        )
+        .order('created_at', ascending: true);
+    return List<Map<String, dynamic>>.from(resp);
+  }
+
+  /// Return a list of unique conversation partners with the last message preview.
+  /// Each entry: { 'partner_id', 'partner_email', 'last_message', 'last_time', 'unread' }
+  static Future<List<Map<String, dynamic>>> fetchConversationsList() async {
+    final uid = client.auth.currentUser?.id;
+    if (uid == null) return [];
+
+    // Fetch all messages involving the user
+    final resp = await client
+        .from('messages')
+        .select()
+        .or('sender_id.eq.$uid,receiver_id.eq.$uid')
+        .order('created_at', ascending: false);
+    final allMsgs = List<Map<String, dynamic>>.from(resp);
+
+    // Group by partner
+    final Map<String, Map<String, dynamic>> convos = {};
+    for (final m in allMsgs) {
+      final partnerId = m['sender_id'] == uid
+          ? m['receiver_id']
+          : m['sender_id'];
+      if (!convos.containsKey(partnerId)) {
+        convos[partnerId as String] = {
+          'partner_id': partnerId,
+          'last_message': m['content'],
+          'last_time': m['created_at'],
+          'unread': (m['receiver_id'] == uid && m['read'] == false) ? 1 : 0,
+        };
+      } else {
+        if (m['receiver_id'] == uid && m['read'] == false) {
+          convos[partnerId]!['unread'] =
+              (convos[partnerId]!['unread'] as int) + 1;
+        }
+      }
+    }
+
+    return convos.values.toList();
+  }
+
+  /// Mark all messages from [senderId] to the current user as read.
+  static Future<void> markConversationRead(String senderId) async {
+    final uid = client.auth.currentUser?.id;
+    if (uid == null) return;
+    await client
+        .from('messages')
+        .update({'read': true})
+        .eq('sender_id', senderId)
+        .eq('receiver_id', uid)
+        .eq('read', false);
+  }
+
+  /// Fetch all users except the current one (for "new message" user picker).
+  static Future<List<Map<String, dynamic>>> fetchOtherUsers() async {
+    final uid = client.auth.currentUser?.id;
+    debugPrint('[fetchOtherUsers] uid=$uid');
+    final resp = await client.from('users').select();
+    final all = List<Map<String, dynamic>>.from(resp);
+    debugPrint('[fetchOtherUsers] total users in table: ${all.length}');
+    for (final u in all) {
+      debugPrint(
+        '[fetchOtherUsers] user: auth_id=${u['auth_id']}, id=${u['id']}, email=${u['email']}',
+      );
+    }
+    if (uid == null) return all;
+    final filtered = all.where((u) {
+      final authId = u['auth_id']?.toString();
+      final id = u['id']?.toString();
+      return authId != uid && id != uid;
+    }).toList();
+    debugPrint(
+      '[fetchOtherUsers] filtered (excluding self): ${filtered.length}',
+    );
+    return filtered;
   }
 }

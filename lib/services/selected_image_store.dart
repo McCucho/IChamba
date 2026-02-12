@@ -13,12 +13,19 @@ class SelectedImageStore {
   /// Optional filename for display/metadata
   final ValueNotifier<String?> filenameNotifier = ValueNotifier<String?>(null);
 
+  /// Optional public avatar URL stored in backend (Supabase)
+  final ValueNotifier<String?> avatarUrlNotifier = ValueNotifier<String?>(null);
+
   /// Notifier to indicate posts list has changed (increment to notify listeners)
   final ValueNotifier<int> postsVersion = ValueNotifier<int>(0);
 
   void setImage(Uint8List? bytes, [String? filename]) {
     imageNotifier.value = bytes;
     filenameNotifier.value = filename;
+  }
+
+  void setAvatarUrl(String? url) {
+    avatarUrlNotifier.value = url;
   }
 
   void clear() {
