@@ -175,72 +175,92 @@ class _MessagesPageState extends State<MessagesPage> {
                     final c = _conversations[index];
                     final unread = (c['unread'] as int?) ?? 0;
                     final name = c['partner_name'] as String? ?? '';
-                    final initial = name.isNotEmpty ? name[0].toUpperCase() : '';
-                    return ListTile(
-                      leading: CircleAvatar(
-                        radius: 24,
-                        child: initial.isNotEmpty
-                            ? Text(initial)
-                            : const Icon(Icons.person),
+                    final initial = name.isNotEmpty
+                        ? name[0].toUpperCase()
+                        : '';
+                    final cs = Theme.of(context).colorScheme;
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
                       ),
-                      title: Text(
-                        c['partner_name'] as String? ?? '',
-                        style: TextStyle(
-                          fontWeight: unread > 0
-                              ? FontWeight.bold
-                              : FontWeight.normal,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: cs.surface,
+                          borderRadius: BorderRadius.circular(24),
                         ),
-                      ),
-                      subtitle: Text(
-                        c['last_message'] as String? ?? '',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: unread > 0
-                              ? Theme.of(context).colorScheme.onSurface
-                              : Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                      trailing: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            _formatTime(c['last_time'] as String?),
+                        child: ListTile(
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(24),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
+                          leading: CircleAvatar(
+                            radius: 24,
+                            backgroundColor: cs.primary.withOpacity(0.08),
+                            child: initial.isNotEmpty
+                                ? Text(initial)
+                                : Icon(Icons.person, color: cs.onSurface),
+                          ),
+                          title: Text(
+                            c['partner_name'] as String? ?? '',
                             style: TextStyle(
-                              fontSize: 11,
-                              color: unread > 0
-                                  ? Theme.of(context).colorScheme.primary
-                                  : Theme.of(
-                                      context,
-                                    ).colorScheme.onSurfaceVariant,
+                              fontWeight: unread > 0
+                                  ? FontWeight.bold
+                                  : FontWeight.normal,
+                              color: cs.onSurface,
                             ),
                           ),
-                          if (unread > 0) ...[
-                            const SizedBox(height: 4),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 6,
-                                vertical: 2,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Theme.of(context).colorScheme.primary,
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              child: Text(
-                                '$unread',
+                          subtitle: Text(
+                            c['last_message'] as String? ?? '',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: unread > 0
+                                  ? cs.onSurface
+                                  : cs.onSurfaceVariant,
+                            ),
+                          ),
+                          trailing: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Text(
+                                _formatTime(c['last_time'] as String?),
                                 style: TextStyle(
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.onPrimary,
                                   fontSize: 11,
-                                  fontWeight: FontWeight.bold,
+                                  color: unread > 0
+                                      ? cs.primary
+                                      : cs.onSurfaceVariant,
                                 ),
                               ),
-                            ),
-                          ],
-                        ],
+                              if (unread > 0) ...[
+                                const SizedBox(height: 4),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 6,
+                                    vertical: 2,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: cs.primary,
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: Text(
+                                    '$unread',
+                                    style: TextStyle(
+                                      color: cs.onPrimary,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                          onTap: () => _openChat(c),
+                        ),
                       ),
-                      onTap: () => _openChat(c),
                     );
                   },
                 ),
@@ -310,7 +330,7 @@ class _UserPickerSheetState extends State<_UserPickerSheet> {
             ),
           ),
           Expanded(
-                child: filtered.isEmpty
+            child: filtered.isEmpty
                 ? Center(
                     child: Padding(
                       padding: const EdgeInsets.all(24),
@@ -325,13 +345,16 @@ class _UserPickerSheetState extends State<_UserPickerSheet> {
                       ),
                     ),
                   )
-                    : ListView.builder(
+                : ListView.builder(
                     controller: scrollController,
                     itemCount: filtered.length,
                     itemBuilder: (context, i) {
                       final u = filtered[i];
-                      final name = (u['first_name'] ?? u['email'] ?? '').toString();
-                      final initial = name.isNotEmpty ? name[0].toUpperCase() : '';
+                      final name = (u['first_name'] ?? u['email'] ?? '')
+                          .toString();
+                      final initial = name.isNotEmpty
+                          ? name[0].toUpperCase()
+                          : '';
                       return ListTile(
                         leading: CircleAvatar(
                           child: initial.isNotEmpty
@@ -465,12 +488,12 @@ class _ChatViewState extends State<_ChatView> {
                 onPressed: widget.onBack,
                 tooltip: 'Volver',
               ),
-                CircleAvatar(
+              CircleAvatar(
                 radius: 18,
                 child: widget.partnerName.isNotEmpty
-                  ? Text(widget.partnerName[0].toUpperCase())
-                  : const Icon(Icons.person, size: 20),
-                ),
+                    ? Text(widget.partnerName[0].toUpperCase())
+                    : const Icon(Icons.person, size: 20),
+              ),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
@@ -602,29 +625,28 @@ class _ChatBubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final bgColor = isMe ? cs.primary : cs.surfaceVariant;
+    final bgColor = isMe ? cs.primary : cs.surface;
     final textColor = isMe ? cs.onPrimary : cs.onSurface;
 
     return Align(
       alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
         constraints: BoxConstraints(
-          maxWidth: MediaQuery.of(context).size.width * 0.65,
+          maxWidth: MediaQuery.of(context).size.width * 0.75,
         ),
-        margin: const EdgeInsets.symmetric(vertical: 3),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         decoration: BoxDecoration(
           color: bgColor,
-          borderRadius: BorderRadius.only(
-            topLeft: const Radius.circular(16),
-            topRight: const Radius.circular(16),
-            bottomLeft: isMe
-                ? const Radius.circular(16)
-                : const Radius.circular(4),
-            bottomRight: isMe
-                ? const Radius.circular(4)
-                : const Radius.circular(16),
-          ),
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: [
+            if (!isMe)
+              BoxShadow(
+                color: Colors.black.withOpacity(0.03),
+                blurRadius: 4,
+                offset: const Offset(0, 1),
+              ),
+          ],
         ),
         child: Column(
           crossAxisAlignment: isMe
@@ -632,7 +654,7 @@ class _ChatBubble extends StatelessWidget {
               : CrossAxisAlignment.start,
           children: [
             Text(text, style: TextStyle(color: textColor, fontSize: 15)),
-            const SizedBox(height: 3),
+            const SizedBox(height: 6),
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -644,7 +666,7 @@ class _ChatBubble extends StatelessWidget {
                   ),
                 ),
                 if (isMe) ...[
-                  const SizedBox(width: 3),
+                  const SizedBox(width: 6),
                   Icon(
                     isRead ? Icons.done_all : Icons.done,
                     size: 14,
@@ -652,7 +674,7 @@ class _ChatBubble extends StatelessWidget {
                         ? (cs.brightness == Brightness.dark
                               ? Colors.lightBlueAccent
                               : Colors.blue.shade300)
-                        : textColor.withOpacity(0.5),
+                        : textColor.withOpacity(0.6),
                   ),
                 ],
               ],

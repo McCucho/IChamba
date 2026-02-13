@@ -8,6 +8,7 @@ import 'profile_page.dart';
 import 'publish_page.dart';
 import 'messages_page.dart';
 import 'settings_page.dart';
+
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
 
@@ -25,15 +26,11 @@ class _MainScreenState extends State<MainScreen> {
   @override
   void initState() {
     super.initState();
-    // Sidebar stays visible at all times; load public posts for feed.
     _loadPosts();
-    // Listen for posts changes and refresh feed
     _postsListener = _onPostsChanged;
     SelectedImageStore.instance.postsVersion.addListener(_postsListener!);
     _loadAppVersion();
   }
-
-  // profile loader removed because avatar columns are not used in DB
 
   Future<void> _loadAppVersion() async {
     try {
@@ -47,54 +44,29 @@ class _MainScreenState extends State<MainScreen> {
     }
   }
 
-  void _onPostsChanged() {
-    _loadPosts();
-  }
-
-  @override
-  void dispose() {
-    if (_postsListener != null) {
-      SelectedImageStore.instance.postsVersion.removeListener(_postsListener!);
-    }
-    super.dispose();
-  }
-
-  Future<void> _pickProfileImage() async {
-    try {
-      final res = await FilePicker.platform.pickFiles(
-        type: FileType.image,
-        withData: true,
-      );
-      if (res == null) return;
-      final file = res.files.first;
-
-      if (file.bytes != null) {
-        try {
-          // Do not upload avatar: project DB has no avatar_url column.
-          SelectedImageStore.instance.setImage(file.bytes, file.name);
-          if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Imagen seleccionada (no se guarda en el servidor)')),
-          );
-        } catch (e) {
-          if (!mounted) return;
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text('Error al subir imagen: $e')));
-        }
-      }
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error al seleccionar imagen: $e')),
-      );
-    }
-  }
-
   Future<void> _loadPosts() async {
     setState(() => _loadingPosts = true);
     try {
       final posts = await SupabaseService.fetchPosts();
+      try {
+        final users = await SupabaseService.fetchUsers();
+        final Map<String, Map<String, dynamic>> userMap = {};
+        for (final u in users) {
+          final key = (u['auth_id'] ?? u['id'])?.toString();
+          if (key != null) userMap[key] = u;
+        }
+        for (final p in posts) {
+          final uid = p['user_id']?.toString();
+          if (uid != null && userMap.containsKey(uid)) {
+            p['author_name'] =
+                userMap[uid]?['first_name'] ?? userMap[uid]?['email'] ?? uid;
+          } else if (uid != null) {
+            p['author_name'] = uid;
+          }
+        }
+      } catch (_) {
+        // ignore
+      }
       if (!mounted) return;
       setState(() => _posts = posts);
     } catch (e) {
@@ -104,29 +76,138 @@ class _MainScreenState extends State<MainScreen> {
     }
   }
 
+  String _formatPostTime(String? iso) {
+    if (iso == null) return '';
+    try {
+      final dt = DateTime.parse(iso).toLocal();
+      final now = DateTime.now();
+      if (dt.year == now.year && dt.month == now.month && dt.day == now.day) {
+        return '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+      }
+      return '${dt.day}/${dt.month} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+    } catch (_) {
+      return '';
+    }
+  }
+
+  String _postAuthor(Map<String, dynamic> post) {
+    final keys = [
+      'author_name',
+      'author',
+      'first_name',
+      'user_name',
+      'user_email',
+      'email',
+      'user_id',
+      'creator',
+    ];
+    for (final k in keys) {
+      final v = post[k];
+      if (v != null && v.toString().trim().isNotEmpty) return v.toString();
+    }
+    return 'Anon';
+  }
+
+  String _timeAgoUruguay(String? iso) {
+    if (iso == null) return '';
+    try {
+      final createdUtc = DateTime.parse(iso).toUtc();
+      final createdUy = createdUtc.subtract(const Duration(hours: 3));
+      final nowUy = DateTime.now().toUtc().subtract(const Duration(hours: 3));
+      final diff = nowUy.difference(createdUy);
+      if (diff.inSeconds < 60) return 'ahora';
+      if (diff.inMinutes < 60) return 'hace ${diff.inMinutes}m';
+      if (diff.inHours < 24) return 'hace ${diff.inHours}h';
+      if (diff.inDays < 7) return 'hace ${diff.inDays}d';
+      return '${createdUy.day.toString().padLeft(2, '0')}/${createdUy.month.toString().padLeft(2, '0')}/${createdUy.year}';
+    } catch (_) {
+      return '';
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    const bannerHeight = 56.0;
     return Scaffold(
-      body: Column(
+      body: Stack(
         children: [
-          // Top thin translucent banner with stylized app name and logout
-          Container(
-            width: double.infinity,
-            height: 56,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            decoration: BoxDecoration(
-              color: Theme.of(
-                context,
-              ).colorScheme.primaryContainer.withOpacity(0.12),
-            ),
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
+          Positioned.fill(
+            child: Padding(
+              padding: const EdgeInsets.only(top: bannerHeight),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final sidebarWidth = constraints.maxWidth < 720
+                      ? (constraints.maxWidth * 0.26).clamp(72.0, 220.0)
+                      : (constraints.maxWidth * 0.22).clamp(120.0, 320.0);
+
+                  return Row(
                     children: [
-                      Text(
+                      Container(
+                        width: sidebarWidth,
+                        color: Theme.of(context).colorScheme.surfaceVariant,
+                        child: SafeArea(
+                          top: false,
+                          child: SingleChildScrollView(
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.start,
+                              children: [
+                                const SizedBox(height: 6),
+                                ..._buildSidebarButtons(context),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+
+                      Expanded(
+                        child: Stack(
+                          children: [
+                            Positioned.fill(
+                              child: DecoratedBox(
+                                decoration: BoxDecoration(
+                                  image: const DecorationImage(
+                                    image: AssetImage('assets/images/bg.jpg'),
+                                    fit: BoxFit.none,
+                                    alignment: Alignment.topCenter,
+                                  ),
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.background,
+                                ),
+                              ),
+                            ),
+                            SafeArea(
+                              top: false,
+                              child: Container(
+                                padding: const EdgeInsets.all(16),
+                                child: _buildContentForIndex(),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ),
+          ),
+
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: Material(
+              elevation: 4,
+              color: Theme.of(context).colorScheme.surface,
+              child: Container(
+                height: bannerHeight,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Stack(
+                  children: [
+                    Center(
+                      child: Text(
                         'Ichamba',
                         style: TextStyle(
                           color: Theme.of(context).colorScheme.primary,
@@ -143,79 +224,44 @@ class _MainScreenState extends State<MainScreen> {
                           ],
                         ),
                       ),
-                      if (_appVersion != null)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 2.0),
-                          child: Text(
-                            'v${_appVersion}',
-                            style: TextStyle(
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.onSurfaceVariant,
-                              fontSize: 11,
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-                Positioned(
-                  right: 0,
-                  child: IconButton(
-                    tooltip: 'Salir',
-                    onPressed: () async {
-                      await SupabaseService.signOut();
-                      if (!context.mounted) return;
-                      Navigator.pushNamedAndRemoveUntil(
-                        context,
-                        '/login',
-                        (r) => false,
-                      );
-                    },
-                    icon: const Icon(Icons.logout),
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          // Main content: sidebar + content area
-          Expanded(
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final sidebarWidth = constraints.maxWidth < 720
-                    ? (constraints.maxWidth * 0.26).clamp(72.0, 220.0)
-                    : (constraints.maxWidth * 0.22).clamp(120.0, 320.0);
-
-                return Row(
-                  children: [
-                    Container(
-                      width: sidebarWidth,
-                      color: Theme.of(context).colorScheme.surfaceVariant,
-                      child: SafeArea(
-                        child: SingleChildScrollView(
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.start,
-                            children: [
-                              // Top avatar/logo removed as requested
-                              const SizedBox(height: 6),
-                              ..._buildSidebarButtons(context),
-                            ],
-                          ),
-                        ),
-                      ),
                     ),
-                    Expanded(
-                      child: Container(
-                        color: Theme.of(context).colorScheme.background,
-                        padding: const EdgeInsets.all(16),
-                        child: _buildContentForIndex(),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (_appVersion != null)
+                            Padding(
+                              padding: const EdgeInsets.only(right: 8.0),
+                              child: Text(
+                                'v${_appVersion}',
+                                style: TextStyle(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurface,
+                                  fontSize: 11,
+                                ),
+                              ),
+                            ),
+                          IconButton(
+                            tooltip: 'Salir',
+                            onPressed: () async {
+                              await SupabaseService.signOut();
+                              if (!context.mounted) return;
+                              Navigator.pushNamedAndRemoveUntil(
+                                context,
+                                '/login',
+                                (r) => false,
+                              );
+                            },
+                            icon: const Icon(Icons.logout),
+                          ),
+                        ],
                       ),
                     ),
                   ],
-                );
-              },
+                ),
+              ),
             ),
           ),
         ],
@@ -229,7 +275,6 @@ class _MainScreenState extends State<MainScreen> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final width = constraints.maxWidth;
-        // aim ~200-240px per item; compute columns accordingly
         int crossAxisCount = (width / 220).floor();
         if (crossAxisCount < 1) crossAxisCount = 1;
         if (crossAxisCount > 6) crossAxisCount = 6;
@@ -295,14 +340,12 @@ class _MainScreenState extends State<MainScreen> {
             final width = constraints.maxWidth;
             final isDesktop = width >= 900;
 
-            // Choose columns for desktop based on available width
             int columns = (width / 420).floor();
             if (columns < 1) columns = 1;
             if (columns > 3) columns = 3;
 
             Widget content;
             if (_loadingPosts) {
-              // Keep a scrollable child for RefreshIndicator
               content = ListView(
                 children: const [
                   SizedBox(height: 24),
@@ -330,6 +373,8 @@ class _MainScreenState extends State<MainScreen> {
                 itemCount: _posts.length,
                 itemBuilder: (context, index) {
                   final post = _posts[index];
+                  final author = _postAuthor(post);
+                  final time = _formatPostTime(post['created_at'] as String?);
                   return Card(
                     margin: EdgeInsets.zero,
                     elevation: 2,
@@ -342,7 +387,9 @@ class _MainScreenState extends State<MainScreen> {
                         if (post['image_url'] != null)
                           Expanded(
                             child: ClipRRect(
-                              borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+                              borderRadius: const BorderRadius.vertical(
+                                top: Radius.circular(12),
+                              ),
                               child: Image.network(
                                 post['image_url'] as String,
                                 width: double.infinity,
@@ -355,14 +402,40 @@ class _MainScreenState extends State<MainScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                    author,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                  Text(
+                                    time,
+                                    style: const TextStyle(
+                                      fontSize: 11,
+                                      color: Colors.black54,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
                               Text(post['description'] ?? ''),
                               const SizedBox(height: 8),
-                              Text(
-                                post['created_at'] ?? '',
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.black54,
-                                ),
+                              Builder(
+                                builder: (ctx) {
+                                  final cs = Theme.of(ctx).colorScheme;
+                                  return Text(
+                                    '${author} · ${_timeAgoUruguay(post['created_at'] as String?)}',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: cs.onSurfaceVariant,
+                                    ),
+                                  );
+                                },
                               ),
                             ],
                           ),
@@ -377,6 +450,8 @@ class _MainScreenState extends State<MainScreen> {
                 itemCount: _posts.length,
                 itemBuilder: (context, index) {
                   final post = _posts[index];
+                  final author = _postAuthor(post);
+                  final time = _formatPostTime(post['created_at'] as String?);
                   return Card(
                     margin: const EdgeInsets.symmetric(vertical: 8),
                     elevation: 2,
@@ -398,14 +473,40 @@ class _MainScreenState extends State<MainScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                    author,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                  Text(
+                                    time,
+                                    style: const TextStyle(
+                                      fontSize: 11,
+                                      color: Colors.black54,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
                               Text(post['description'] ?? ''),
                               const SizedBox(height: 8),
-                              Text(
-                                post['created_at'] ?? '',
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.black54,
-                                ),
+                              Builder(
+                                builder: (ctx) {
+                                  final cs = Theme.of(ctx).colorScheme;
+                                  return Text(
+                                    '${author} · ${_timeAgoUruguay(post['created_at'] as String?)}',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: cs.onSurfaceVariant,
+                                    ),
+                                  );
+                                },
                               ),
                             ],
                           ),
@@ -417,17 +518,13 @@ class _MainScreenState extends State<MainScreen> {
               );
             }
 
-            return RefreshIndicator(
-              onRefresh: _loadPosts,
-              child: content,
-            );
+            return RefreshIndicator(onRefresh: _loadPosts, child: content);
           },
         );
     }
   }
 
   List<Widget> _buildSidebarButtons(BuildContext context) {
-    // Left menu: 6 icons. 1=Main menu, 2=Profile (edit user data), then others.
     final items = [
       {
         'icon': Icons.person,
@@ -477,7 +574,6 @@ class _MainScreenState extends State<MainScreen> {
       },
     ];
 
-    // Render icon with label beneath and active highlight
     return items.asMap().entries.map((entry) {
       final idx = entry.key;
       final it = entry.value;
@@ -497,7 +593,6 @@ class _MainScreenState extends State<MainScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // For the first item (profile) show mini-avatar if available
                 if (idx == 0)
                   ValueListenableBuilder<Uint8List?>(
                     valueListenable: SelectedImageStore.instance.imageNotifier,
@@ -578,5 +673,43 @@ class _MainScreenState extends State<MainScreen> {
         ),
       ),
     );
+  }
+
+  void _onPostsChanged() {
+    _loadPosts();
+  }
+
+  Future<void> _pickProfileImage() async {
+    try {
+      final res = await FilePicker.platform.pickFiles(
+        type: FileType.image,
+        withData: true,
+      );
+      if (res == null) return;
+      final file = res.files.first;
+
+      if (file.bytes != null) {
+        SelectedImageStore.instance.setImage(file.bytes!, file.name);
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Imagen seleccionada (no se guarda en el servidor)'),
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error al seleccionar imagen: $e')),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    if (_postsListener != null) {
+      SelectedImageStore.instance.postsVersion.removeListener(_postsListener!);
+    }
+    super.dispose();
   }
 }
