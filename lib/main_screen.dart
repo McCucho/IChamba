@@ -23,6 +23,7 @@ class _MainScreenState extends State<MainScreen> {
   String? _appVersion;
   VoidCallback? _postsListener;
   int _unreadMessages = 0;
+  RealtimeSubscription? _messagesSub;
 
   @override
   void initState() {
@@ -32,6 +33,21 @@ class _MainScreenState extends State<MainScreen> {
     SelectedImageStore.instance.postsVersion.addListener(_postsListener!);
     _loadAppVersion();
     _loadUnreadMessages();
+    _subscribeUnreadMessages();
+  }
+
+  void _subscribeUnreadMessages() {
+    try {
+      final client = SupabaseService.client;
+      // subscribe to inserts/updates on messages table
+      _messagesSub = client
+          .from('messages')
+          .on(SupabaseEventTypes.insert, (payload) => _loadUnreadMessages())
+          .on(SupabaseEventTypes.update, (payload) => _loadUnreadMessages())
+          .subscribe();
+    } catch (_) {
+      // ignore if realtime not available
+    }
   }
 
   Future<void> _loadUnreadMessages() async {
@@ -789,6 +805,12 @@ class _MainScreenState extends State<MainScreen> {
     if (_postsListener != null) {
       SelectedImageStore.instance.postsVersion.removeListener(_postsListener!);
     }
+    try {
+      if (_messagesSub != null) {
+        SupabaseService.client.removeSubscription(_messagesSub!);
+        _messagesSub = null;
+      }
+    } catch (_) {}
     super.dispose();
   }
 }
