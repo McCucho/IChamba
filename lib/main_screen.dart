@@ -111,14 +111,40 @@ class _MainScreenState extends State<MainScreen> {
   String _timeAgoUruguay(String? iso) {
     if (iso == null) return '';
     try {
-      final createdUtc = DateTime.parse(iso).toUtc();
-      final createdUy = createdUtc.subtract(const Duration(hours: 3));
-      final nowUy = DateTime.now().toUtc().subtract(const Duration(hours: 3));
-      final diff = nowUy.difference(createdUy);
-      if (diff.inSeconds < 60) return 'ahora';
+      // Determine the created instant in UTC.
+      // If the string contains a timezone offset (Z or +hh:mm/-hh:mm), parse normally.
+      // Otherwise treat the timestamp as Uruguay local time (UTC-3) and convert to UTC.
+      DateTime createdUtc;
+      final tzOffsetPattern = RegExp(r'Z|[+-]\d{2}:?\d{2}\$');
+      if (tzOffsetPattern.hasMatch(iso)) {
+        createdUtc = DateTime.parse(iso).toUtc();
+      } else {
+        final dt = DateTime.parse(iso);
+        // Build a UTC instant from the components, then add 3 hours to convert
+        // Uruguay-local (UTC-3) -> UTC instant = local + 3h.
+        createdUtc = DateTime.utc(
+          dt.year,
+          dt.month,
+          dt.day,
+          dt.hour + 3,
+          dt.minute,
+          dt.second,
+          dt.millisecond,
+          dt.microsecond,
+        );
+      }
+
+      final nowUtc = DateTime.now().toUtc();
+      final diff = nowUtc.difference(createdUtc);
+
+      // If the post is in the future or less than a minute old, show at least 1 minute.
+      if (diff.isNegative || diff.inSeconds < 60) return 'hace 1m';
       if (diff.inMinutes < 60) return 'hace ${diff.inMinutes}m';
       if (diff.inHours < 24) return 'hace ${diff.inHours}h';
       if (diff.inDays < 7) return 'hace ${diff.inDays}d';
+
+      // Older: show date in Uruguay local (dd/MM/yyyy)
+      final createdUy = createdUtc.subtract(const Duration(hours: 3));
       return '${createdUy.day.toString().padLeft(2, '0')}/${createdUy.month.toString().padLeft(2, '0')}/${createdUy.year}';
     } catch (_) {
       return '';
