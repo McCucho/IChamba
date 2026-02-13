@@ -2,6 +2,39 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'services/supabase_service.dart';
 
+// Parse an ISO-like timestamp and return the corresponding UTC instant.
+// If the string contains a timezone (Z or +hh:mm/-hh:mm) we parse it normally.
+// If it has no offset, we treat the timestamp as Uruguay local time (UTC-3)
+// and return the UTC instant representing that local time.
+DateTime _parseIsoToUtc(String iso) {
+  final tzOffsetPattern = RegExp(r'Z|[+-]\d{2}:?\d{2}\$');
+  if (tzOffsetPattern.hasMatch(iso)) {
+    return DateTime.parse(iso).toUtc();
+  }
+
+  // Try to extract components without depending on the platform local timezone.
+  final m = RegExp(
+    r"^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d+))?)?\$",
+  ).firstMatch(iso);
+  if (m != null) {
+    final y = int.parse(m.group(1)!);
+    final mo = int.parse(m.group(2)!);
+    final d = int.parse(m.group(3)!);
+    final h = int.parse(m.group(4)!);
+    final mi = int.parse(m.group(5)!);
+    final s = m.group(6) != null ? int.parse(m.group(6)!) : 0;
+    final ms = m.group(7) != null
+        ? int.parse((m.group(7)!.padRight(3, '0')).substring(0, 3))
+        : 0;
+    // The string represents Uruguay local (UTC-3). Build the UTC instant by
+    // adding 3 hours to the local components.
+    return DateTime.utc(y, mo, d, h + 3, mi, s, ms);
+  }
+
+  // Fallback: let DateTime.parse handle it and normalize to UTC.
+  return DateTime.parse(iso).toUtc();
+}
+
 /// Full messaging page: conversations list + chat view (WhatsApp-style).
 class MessagesPage extends StatefulWidget {
   const MessagesPage({super.key});
@@ -113,9 +146,11 @@ class _MessagesPageState extends State<MessagesPage> {
   @override
   Widget build(BuildContext context) {
     if (_activePartner != null) {
+      final partnerLast = _activePartner!['partner_last_activity'] as String?;
       return _ChatView(
         partnerId: _activePartner!['partner_id'] as String,
         partnerName: _activePartner!['partner_name'] as String? ?? '',
+        partnerLastActivity: partnerLast,
         onBack: _closeChat,
       );
     }
@@ -160,9 +195,8 @@ class _MessagesPageState extends State<MessagesPage> {
                       Icon(
                         Icons.chat_bubble_outline,
                         size: 56,
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.onSurfaceVariant.withOpacity(0.4),
+                        color: Theme.of(context).colorScheme.onSurfaceVariant
+                            .withAlpha((0.4 * 255).round()),
                       ),
                       const SizedBox(height: 12),
                       const Text('No hay conversaciones aún'),
@@ -209,7 +243,9 @@ class _MessagesPageState extends State<MessagesPage> {
                           ),
                           leading: CircleAvatar(
                             radius: 24,
-                            backgroundColor: cs.primary.withOpacity(0.08),
+                            backgroundColor: cs.primary.withAlpha(
+                              (0.08 * 255).round(),
+                            ),
                             child: initial.isNotEmpty
                                 ? Text(initial)
                                 : Icon(Icons.person, color: cs.onSurface),
@@ -258,7 +294,9 @@ class _MessagesPageState extends State<MessagesPage> {
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
                               Text(
-                                _formatTime(c['last_time'] as String?),
+                                _formatUruguayActivity(
+                                  c['last_time'] as String?,
+                                ),
                                 style: TextStyle(
                                   fontSize: 11,
                                   color: unread > 0
@@ -317,24 +355,7 @@ class _MessagesPageState extends State<MessagesPage> {
   String _formatUruguayActivity(String? iso) {
     if (iso == null) return '';
     try {
-      // parse with timezone if present, otherwise treat as Uruguay local (UTC-3)
-      DateTime createdUtc;
-      final tzOffsetPattern = RegExp(r'Z|[+-]\d{2}:?\d{2}\$');
-      if (tzOffsetPattern.hasMatch(iso)) {
-        createdUtc = DateTime.parse(iso).toUtc();
-      } else {
-        final dt = DateTime.parse(iso);
-        createdUtc = DateTime.utc(
-          dt.year,
-          dt.month,
-          dt.day,
-          dt.hour + 3,
-          dt.minute,
-          dt.second,
-          dt.millisecond,
-          dt.microsecond,
-        );
-      }
+      final createdUtc = _parseIsoToUtc(iso);
       final uy = createdUtc.subtract(const Duration(hours: 3));
       final nowUy = DateTime.now().toUtc().subtract(const Duration(hours: 3));
       if (uy.year == nowUy.year &&
@@ -351,23 +372,7 @@ class _MessagesPageState extends State<MessagesPage> {
   bool _isPartnerOnline(String? iso, {int minutes = 5}) {
     if (iso == null) return false;
     try {
-      DateTime createdUtc;
-      final tzOffsetPattern = RegExp(r'Z|[+-]\d{2}:?\d{2}\$');
-      if (tzOffsetPattern.hasMatch(iso)) {
-        createdUtc = DateTime.parse(iso).toUtc();
-      } else {
-        final dt = DateTime.parse(iso);
-        createdUtc = DateTime.utc(
-          dt.year,
-          dt.month,
-          dt.day,
-          dt.hour + 3,
-          dt.minute,
-          dt.second,
-          dt.millisecond,
-          dt.microsecond,
-        );
-      }
+      final createdUtc = _parseIsoToUtc(iso);
       final nowUtc = DateTime.now().toUtc();
       final diff = nowUtc.difference(createdUtc);
       return !diff.isNegative && diff.inMinutes < minutes;
@@ -472,11 +477,13 @@ class _UserPickerSheetState extends State<_UserPickerSheet> {
 class _ChatView extends StatefulWidget {
   final String partnerId;
   final String partnerName;
+  final String? partnerLastActivity;
   final VoidCallback onBack;
 
   const _ChatView({
     required this.partnerId,
     required this.partnerName,
+    this.partnerLastActivity,
     required this.onBack,
   });
 
@@ -567,13 +574,72 @@ class _ChatViewState extends State<_ChatView> {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    String _formatUruguayActivityLocal(String? iso) {
+      if (iso == null) return '';
+      try {
+        final tzOffsetPattern = RegExp(r'Z|[+-]\d{2}:?\d{2}\$');
+        DateTime createdUtc;
+        if (tzOffsetPattern.hasMatch(iso)) {
+          createdUtc = DateTime.parse(iso).toUtc();
+        } else {
+          final dt = DateTime.parse(iso);
+          createdUtc = DateTime.utc(
+            dt.year,
+            dt.month,
+            dt.day,
+            dt.hour + 3,
+            dt.minute,
+            dt.second,
+            dt.millisecond,
+            dt.microsecond,
+          );
+        }
+        final uy = createdUtc.subtract(const Duration(hours: 3));
+        return '${uy.hour.toString().padLeft(2, '0')}:${uy.minute.toString().padLeft(2, '0')}';
+      } catch (_) {
+        return '';
+      }
+    }
+
+    bool _isOnlineLocal(String? iso, {int minutes = 5}) {
+      if (iso == null) return false;
+      try {
+        final tzOffsetPattern = RegExp(r'Z|[+-]\d{2}:?\d{2}\$');
+        DateTime createdUtc;
+        if (tzOffsetPattern.hasMatch(iso)) {
+          createdUtc = DateTime.parse(iso).toUtc();
+        } else {
+          final dt = DateTime.parse(iso);
+          createdUtc = DateTime.utc(
+            dt.year,
+            dt.month,
+            dt.day,
+            dt.hour + 3,
+            dt.minute,
+            dt.second,
+            dt.millisecond,
+            dt.microsecond,
+          );
+        }
+        final nowUtc = DateTime.now().toUtc();
+        final diff = nowUtc.difference(createdUtc);
+        return !diff.isNegative && diff.inMinutes < minutes;
+      } catch (_) {
+        return false;
+      }
+    }
+
+    final partnerLast = widget.partnerLastActivity;
+    final partnerOnline = _isOnlineLocal(partnerLast);
 
     return Column(
       children: [
         // Chat header
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-          decoration: BoxDecoration(color: cs.surfaceVariant.withOpacity(0.5)),
+          decoration: BoxDecoration(
+            color: cs.surfaceContainerHighest.withAlpha((0.5 * 255).round()),
+          ),
           child: Row(
             children: [
               IconButton(
@@ -589,13 +655,31 @@ class _ChatViewState extends State<_ChatView> {
               ),
               const SizedBox(width: 10),
               Expanded(
-                child: Text(
-                  widget.partnerName,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 16,
-                  ),
-                  overflow: TextOverflow.ellipsis,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      widget.partnerName,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 16,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      partnerOnline
+                          ? 'En línea'
+                          : 'Últ. conexión: ${_formatUruguayActivityLocal(partnerLast)}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: partnerOnline ? cs.primary : cs.onSurfaceVariant,
+                        fontWeight: partnerOnline
+                            ? FontWeight.bold
+                            : FontWeight.normal,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
@@ -635,7 +719,7 @@ class _ChatViewState extends State<_ChatView> {
             color: cs.surface,
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.06),
+                color: Colors.black.withAlpha((0.06 * 255).round()),
                 blurRadius: 4,
                 offset: const Offset(0, -1),
               ),
@@ -657,7 +741,9 @@ class _ChatViewState extends State<_ChatView> {
                         borderSide: BorderSide.none,
                       ),
                       filled: true,
-                      fillColor: cs.surfaceVariant.withOpacity(0.4),
+                      fillColor: cs.surfaceContainerHighest.withAlpha(
+                        (0.4 * 255).round(),
+                      ),
                       contentPadding: const EdgeInsets.symmetric(
                         horizontal: 16,
                         vertical: 10,
@@ -708,8 +794,9 @@ class _ChatBubble extends StatelessWidget {
 
   String _fmtTime(String iso) {
     try {
-      final dt = DateTime.parse(iso).toLocal();
-      return '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+      final createdUtc = _parseIsoToUtc(iso);
+      final uy = createdUtc.subtract(const Duration(hours: 3));
+      return '${uy.hour.toString().padLeft(2, '0')}:${uy.minute.toString().padLeft(2, '0')}';
     } catch (_) {
       return '';
     }
@@ -735,7 +822,7 @@ class _ChatBubble extends StatelessWidget {
           boxShadow: [
             if (!isMe)
               BoxShadow(
-                color: Colors.black.withOpacity(0.03),
+                color: Colors.black.withAlpha((0.03 * 255).round()),
                 blurRadius: 4,
                 offset: const Offset(0, 1),
               ),
@@ -755,7 +842,7 @@ class _ChatBubble extends StatelessWidget {
                   _fmtTime(time),
                   style: TextStyle(
                     fontSize: 10,
-                    color: textColor.withOpacity(0.6),
+                    color: textColor.withAlpha((0.6 * 255).round()),
                   ),
                 ),
                 if (isMe) ...[
@@ -767,7 +854,7 @@ class _ChatBubble extends StatelessWidget {
                         ? (cs.brightness == Brightness.dark
                               ? Colors.lightBlueAccent
                               : Colors.blue.shade300)
-                        : textColor.withOpacity(0.6),
+                        : textColor.withAlpha((0.6 * 255).round()),
                   ),
                 ],
               ],

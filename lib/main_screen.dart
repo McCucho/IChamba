@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:typed_data';
+import 'dart:async';
 import 'package:file_picker/file_picker.dart';
 import 'services/supabase_service.dart';
 import 'services/selected_image_store.dart';
@@ -23,7 +24,8 @@ class _MainScreenState extends State<MainScreen> {
   String? _appVersion;
   VoidCallback? _postsListener;
   int _unreadMessages = 0;
-  RealtimeSubscription? _messagesSub;
+  dynamic _messagesChannel;
+  Timer? _pollTimer;
 
   @override
   void initState() {
@@ -34,17 +36,22 @@ class _MainScreenState extends State<MainScreen> {
     _loadAppVersion();
     _loadUnreadMessages();
     _subscribeUnreadMessages();
+    // Poll every 1 minute as a fallback in case Realtime isn't available.
+    _pollTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+      _loadUnreadMessages();
+    });
   }
 
   void _subscribeUnreadMessages() {
     try {
       final client = SupabaseService.client;
-      // subscribe to inserts/updates on messages table
-      _messagesSub = client
-          .from('messages')
-          .on(SupabaseEventTypes.insert, (payload) => _loadUnreadMessages())
-          .on(SupabaseEventTypes.update, (payload) => _loadUnreadMessages())
-          .subscribe();
+      _messagesChannel = client.channel('public:messages');
+      try {
+        // subscribe without static type references to avoid analyzer issues
+        (_messagesChannel as dynamic).subscribe();
+      } catch (_) {
+        // ignore if subscribe fails at runtime
+      }
     } catch (_) {
       // ignore if realtime not available
     }
@@ -111,12 +118,38 @@ class _MainScreenState extends State<MainScreen> {
   String _formatPostTime(String? iso) {
     if (iso == null) return '';
     try {
-      final dt = DateTime.parse(iso).toLocal();
-      final now = DateTime.now();
-      if (dt.year == now.year && dt.month == now.month && dt.day == now.day) {
-        return '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+      // Parse to UTC instant, treating no-offset timestamps as Uruguay local (UTC-3)
+      DateTime _parseIsoToUtc(String isoStr) {
+        final tzOffsetPattern = RegExp(r'Z|[+-]\d{2}:?\d{2}\$');
+        if (tzOffsetPattern.hasMatch(isoStr))
+          return DateTime.parse(isoStr).toUtc();
+        final m = RegExp(
+          r"^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d+))?)?\$",
+        ).firstMatch(isoStr);
+        if (m != null) {
+          final y = int.parse(m.group(1)!);
+          final mo = int.parse(m.group(2)!);
+          final d = int.parse(m.group(3)!);
+          final h = int.parse(m.group(4)!);
+          final mi = int.parse(m.group(5)!);
+          final s = m.group(6) != null ? int.parse(m.group(6)!) : 0;
+          final ms = m.group(7) != null
+              ? int.parse((m.group(7)!.padRight(3, '0')).substring(0, 3))
+              : 0;
+          return DateTime.utc(y, mo, d, h + 3, mi, s, ms);
+        }
+        return DateTime.parse(isoStr).toUtc();
       }
-      return '${dt.day}/${dt.month} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+
+      final createdUtc = _parseIsoToUtc(iso);
+      final uy = createdUtc.subtract(const Duration(hours: 3));
+      final nowUy = DateTime.now().toUtc().subtract(const Duration(hours: 3));
+      if (uy.year == nowUy.year &&
+          uy.month == nowUy.month &&
+          uy.day == nowUy.day) {
+        return '${uy.hour.toString().padLeft(2, '0')}:${uy.minute.toString().padLeft(2, '0')}';
+      }
+      return '${uy.day}/${uy.month} ${uy.hour.toString().padLeft(2, '0')}:${uy.minute.toString().padLeft(2, '0')}';
     } catch (_) {
       return '';
     }
@@ -143,28 +176,29 @@ class _MainScreenState extends State<MainScreen> {
   String _timeAgoUruguay(String? iso) {
     if (iso == null) return '';
     try {
-      // Determine the created instant in UTC.
-      // If the string contains a timezone offset (Z or +hh:mm/-hh:mm), parse normally.
-      // Otherwise treat the timestamp as Uruguay local time (UTC-3) and convert to UTC.
-      DateTime createdUtc;
-      final tzOffsetPattern = RegExp(r'Z|[+-]\d{2}:?\d{2}\$');
-      if (tzOffsetPattern.hasMatch(iso)) {
-        createdUtc = DateTime.parse(iso).toUtc();
-      } else {
-        final dt = DateTime.parse(iso);
-        // Build a UTC instant from the components, then add 3 hours to convert
-        // Uruguay-local (UTC-3) -> UTC instant = local + 3h.
-        createdUtc = DateTime.utc(
-          dt.year,
-          dt.month,
-          dt.day,
-          dt.hour + 3,
-          dt.minute,
-          dt.second,
-          dt.millisecond,
-          dt.microsecond,
-        );
+      DateTime _parseIsoToUtc(String isoStr) {
+        final tzOffsetPattern = RegExp(r'Z|[+-]\d{2}:?\d{2}\$');
+        if (tzOffsetPattern.hasMatch(isoStr))
+          return DateTime.parse(isoStr).toUtc();
+        final m = RegExp(
+          r"^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d+))?)?\$",
+        ).firstMatch(isoStr);
+        if (m != null) {
+          final y = int.parse(m.group(1)!);
+          final mo = int.parse(m.group(2)!);
+          final d = int.parse(m.group(3)!);
+          final h = int.parse(m.group(4)!);
+          final mi = int.parse(m.group(5)!);
+          final s = m.group(6) != null ? int.parse(m.group(6)!) : 0;
+          final ms = m.group(7) != null
+              ? int.parse((m.group(7)!.padRight(3, '0')).substring(0, 3))
+              : 0;
+          return DateTime.utc(y, mo, d, h + 3, mi, s, ms);
+        }
+        return DateTime.parse(isoStr).toUtc();
       }
+
+      final createdUtc = _parseIsoToUtc(iso);
 
       final nowUtc = DateTime.now().toUtc();
       final diff = nowUtc.difference(createdUtc);
@@ -202,7 +236,9 @@ class _MainScreenState extends State<MainScreen> {
                     children: [
                       Container(
                         width: sidebarWidth,
-                        color: Theme.of(context).colorScheme.surfaceVariant,
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.surfaceContainerHighest,
                         child: SafeArea(
                           top: false,
                           child: SingleChildScrollView(
@@ -229,9 +265,7 @@ class _MainScreenState extends State<MainScreen> {
                                     fit: BoxFit.none,
                                     alignment: Alignment.topCenter,
                                   ),
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.background,
+                                  color: Theme.of(context).colorScheme.surface,
                                 ),
                               ),
                             ),
@@ -275,9 +309,8 @@ class _MainScreenState extends State<MainScreen> {
                           shadows: [
                             Shadow(
                               blurRadius: 2,
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.primary.withOpacity(0.15),
+                              color: Theme.of(context).colorScheme.primary
+                                  .withAlpha((0.15 * 255).round()),
                             ),
                           ],
                         ),
@@ -644,7 +677,9 @@ class _MainScreenState extends State<MainScreen> {
             padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
             decoration: BoxDecoration(
               color: active
-                  ? Theme.of(context).colorScheme.primary.withOpacity(0.08)
+                  ? Theme.of(
+                      context,
+                    ).colorScheme.primary.withAlpha((0.08 * 255).round())
                   : Colors.transparent,
               borderRadius: BorderRadius.circular(8),
             ),
@@ -806,9 +841,15 @@ class _MainScreenState extends State<MainScreen> {
       SelectedImageStore.instance.postsVersion.removeListener(_postsListener!);
     }
     try {
-      if (_messagesSub != null) {
-        SupabaseService.client.removeSubscription(_messagesSub!);
-        _messagesSub = null;
+      // cancel polling timer
+      try {
+        _pollTimer?.cancel();
+        _pollTimer = null;
+      } catch (_) {}
+
+      if (_messagesChannel != null) {
+        SupabaseService.client.removeChannel(_messagesChannel!);
+        _messagesChannel = null;
       }
     } catch (_) {}
     super.dispose();

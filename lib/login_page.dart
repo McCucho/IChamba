@@ -111,9 +111,8 @@ class _LoginPageState extends State<LoginPage> {
                             shadows: [
                               Shadow(
                                 blurRadius: 2,
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.primary.withOpacity(0.15),
+                                color: Theme.of(context).colorScheme.primary
+                                    .withAlpha((0.15 * 255).round()),
                               ),
                             ],
                           ),
