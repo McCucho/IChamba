@@ -41,6 +41,14 @@ class _MessagesPageState extends State<MessagesPage> {
             userMap[pid]?['first_name'] ??
             userMap[pid]?['email'] ??
             pid.substring(0, 8);
+        // prefer an explicit "last activity" field from users table if available
+        c['partner_last_activity'] =
+            userMap[pid]?['last_active'] ??
+            userMap[pid]?['last_seen'] ??
+            userMap[pid]?['last_connection'] ??
+            userMap[pid]?['last_online'] ??
+            userMap[pid]?['updated_at'] ??
+            c['last_time'];
       }
       if (!mounted) return;
       setState(() {
@@ -213,15 +221,29 @@ class _MessagesPageState extends State<MessagesPage> {
                               color: cs.onSurface,
                             ),
                           ),
-                          subtitle: Text(
-                            c['last_message'] as String? ?? '',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: unread > 0
-                                  ? cs.onSurface
-                                  : cs.onSurfaceVariant,
-                            ),
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                c['last_message'] as String? ?? '',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: unread > 0
+                                      ? cs.onSurface
+                                      : cs.onSurfaceVariant,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Últ. actividad: ${_formatUruguayActivity(c['partner_last_activity'] as String?)}',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: cs.onSurfaceVariant,
+                                ),
+                              ),
+                            ],
                           ),
                           trailing: Column(
                             mainAxisAlignment: MainAxisAlignment.center,
@@ -278,6 +300,40 @@ class _MessagesPageState extends State<MessagesPage> {
         return '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
       }
       return '${dt.day}/${dt.month}';
+    } catch (_) {
+      return '';
+    }
+  }
+
+  String _formatUruguayActivity(String? iso) {
+    if (iso == null) return '';
+    try {
+      // parse with timezone if present, otherwise treat as Uruguay local (UTC-3)
+      DateTime createdUtc;
+      final tzOffsetPattern = RegExp(r'Z|[+-]\d{2}:?\d{2}\$');
+      if (tzOffsetPattern.hasMatch(iso)) {
+        createdUtc = DateTime.parse(iso).toUtc();
+      } else {
+        final dt = DateTime.parse(iso);
+        createdUtc = DateTime.utc(
+          dt.year,
+          dt.month,
+          dt.day,
+          dt.hour + 3,
+          dt.minute,
+          dt.second,
+          dt.millisecond,
+          dt.microsecond,
+        );
+      }
+      final uy = createdUtc.subtract(const Duration(hours: 3));
+      final nowUy = DateTime.now().toUtc().subtract(const Duration(hours: 3));
+      if (uy.year == nowUy.year &&
+          uy.month == nowUy.month &&
+          uy.day == nowUy.day) {
+        return '${uy.hour.toString().padLeft(2, '0')}:${uy.minute.toString().padLeft(2, '0')}';
+      }
+      return '${uy.day.toString().padLeft(2, '0')}/${uy.month.toString().padLeft(2, '0')} ${uy.hour.toString().padLeft(2, '0')}:${uy.minute.toString().padLeft(2, '0')}';
     } catch (_) {
       return '';
     }
