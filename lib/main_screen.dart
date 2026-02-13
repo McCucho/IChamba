@@ -22,6 +22,7 @@ class _MainScreenState extends State<MainScreen> {
   bool _loadingPosts = false;
   String? _appVersion;
   VoidCallback? _postsListener;
+  int _unreadMessages = 0;
 
   @override
   void initState() {
@@ -30,6 +31,21 @@ class _MainScreenState extends State<MainScreen> {
     _postsListener = _onPostsChanged;
     SelectedImageStore.instance.postsVersion.addListener(_postsListener!);
     _loadAppVersion();
+    _loadUnreadMessages();
+  }
+
+  Future<void> _loadUnreadMessages() async {
+    try {
+      final convos = await SupabaseService.fetchConversationsList();
+      var total = 0;
+      for (final c in convos) {
+        total += (c['unread'] as int?) ?? 0;
+      }
+      if (!mounted) return;
+      setState(() => _unreadMessages = total);
+    } catch (_) {
+      // ignore
+    }
   }
 
   Future<void> _loadAppVersion() async {
@@ -637,6 +653,43 @@ class _MainScreenState extends State<MainScreen> {
                             : Theme.of(context).colorScheme.onSurface,
                       );
                     },
+                  )
+                else if (idx == 4)
+                  // Messages icon with unread badge
+                  Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      Icon(
+                        it['icon'] as IconData,
+                        size: 28,
+                        color: active
+                            ? Theme.of(context).colorScheme.primary
+                            : Theme.of(context).colorScheme.onSurface,
+                      ),
+                      if (_unreadMessages > 0)
+                        Positioned(
+                          right: -6,
+                          top: -6,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Theme.of(context).colorScheme.primary,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Text(
+                              _unreadMessages > 99 ? '99+' : '$_unreadMessages',
+                              style: TextStyle(
+                                color: Theme.of(context).colorScheme.onPrimary,
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
                   )
                 else
                   Icon(
