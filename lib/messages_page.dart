@@ -187,6 +187,8 @@ class _MessagesPageState extends State<MessagesPage> {
                         ? name[0].toUpperCase()
                         : '';
                     final cs = Theme.of(context).colorScheme;
+                    final partnerLast = c['partner_last_activity'] as String?;
+                    final partnerOnline = _isPartnerOnline(partnerLast);
                     return Padding(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 12,
@@ -237,10 +239,17 @@ class _MessagesPageState extends State<MessagesPage> {
                               ),
                               const SizedBox(height: 4),
                               Text(
-                                'Últ. actividad: ${_formatUruguayActivity(c['partner_last_activity'] as String?)}',
+                                partnerOnline
+                                    ? 'En línea'
+                                    : 'Últ. actividad: ${_formatUruguayActivity(partnerLast)}',
                                 style: TextStyle(
                                   fontSize: 12,
-                                  color: cs.onSurfaceVariant,
+                                  color: partnerOnline
+                                      ? cs.primary
+                                      : cs.onSurfaceVariant,
+                                  fontWeight: partnerOnline
+                                      ? FontWeight.bold
+                                      : FontWeight.normal,
                                 ),
                               ),
                             ],
@@ -336,6 +345,34 @@ class _MessagesPageState extends State<MessagesPage> {
       return '${uy.day.toString().padLeft(2, '0')}/${uy.month.toString().padLeft(2, '0')} ${uy.hour.toString().padLeft(2, '0')}:${uy.minute.toString().padLeft(2, '0')}';
     } catch (_) {
       return '';
+    }
+  }
+
+  bool _isPartnerOnline(String? iso, {int minutes = 5}) {
+    if (iso == null) return false;
+    try {
+      DateTime createdUtc;
+      final tzOffsetPattern = RegExp(r'Z|[+-]\d{2}:?\d{2}\$');
+      if (tzOffsetPattern.hasMatch(iso)) {
+        createdUtc = DateTime.parse(iso).toUtc();
+      } else {
+        final dt = DateTime.parse(iso);
+        createdUtc = DateTime.utc(
+          dt.year,
+          dt.month,
+          dt.day,
+          dt.hour + 3,
+          dt.minute,
+          dt.second,
+          dt.millisecond,
+          dt.microsecond,
+        );
+      }
+      final nowUtc = DateTime.now().toUtc();
+      final diff = nowUtc.difference(createdUtc);
+      return !diff.isNegative && diff.inMinutes < minutes;
+    } catch (_) {
+      return false;
     }
   }
 }
