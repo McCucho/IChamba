@@ -7,7 +7,8 @@ class SupabaseService {
   // Use the 'publicaciones' bucket created in Supabase Storage.
   // Change this value if you prefer a different bucket name.
   static const String _postsBucket = 'publicaciones';
-  // Avatars bucket removed: project does not store avatar_url in DB
+  // Bucket for profile avatars
+  static const String _avatarsBucket = 'avatars';
 
   static Future<void> init({
     required String url,
@@ -380,7 +381,7 @@ class SupabaseService {
   }
 
   /// Fetch all users except the current one (for "new message" user picker).
-  /// 
+  ///
   /// IMPORTANT: Requires RLS policy on public.users that allows SELECT for all authenticated users:
   /// ```sql
   /// CREATE POLICY "Allow authenticated users to view all users"
@@ -392,13 +393,15 @@ class SupabaseService {
 
     try {
       // Query public.users table - RLS must allow SELECT for authenticated users
-        final resp = await client
+      final resp = await client
           .from('users')
           .select('id, auth_id, email, first_name')
           .order('first_name', ascending: true);
-      
+
       final all = List<Map<String, dynamic>>.from(resp);
-      debugPrint('[fetchOtherUsers] ✓ Loaded ${all.length} users from public.users');
+      debugPrint(
+        '[fetchOtherUsers] ✓ Loaded ${all.length} users from public.users',
+      );
 
       if (all.isEmpty) {
         debugPrint('[fetchOtherUsers] ⚠️ No users found. Possible causes:');
@@ -409,7 +412,9 @@ class SupabaseService {
       }
 
       if (uid == null) {
-        debugPrint('[fetchOtherUsers] No current user, returning all ${all.length} users');
+        debugPrint(
+          '[fetchOtherUsers] No current user, returning all ${all.length} users',
+        );
         return all;
       }
 
@@ -419,7 +424,9 @@ class SupabaseService {
         return authId != null && authId != uid;
       }).toList();
 
-      debugPrint('[fetchOtherUsers] ✓ Filtered to ${filtered.length} other users');
+      debugPrint(
+        '[fetchOtherUsers] ✓ Filtered to ${filtered.length} other users',
+      );
       return filtered;
     } catch (e) {
       debugPrint('[fetchOtherUsers] ❌ ERROR: $e');
@@ -440,6 +447,128 @@ class SupabaseService {
       await client.auth.updateUser(UserAttributes(password: newPassword));
     } catch (e) {
       rethrow;
+    }
+  }
+
+  // ── Public profile & ofrecedor helpers ────────────────────────────
+
+  /// Fetch a user's public profile by their auth_id.
+  static Future<Map<String, dynamic>?> fetchPublicProfile(String authId) async {
+    try {
+      final response = await client
+          .from('users')
+          .select()
+          .eq('auth_id', authId)
+          .maybeSingle();
+      return response;
+    } catch (e) {
+      debugPrint('Error fetching public profile: $e');
+      rethrow;
+    }
+  }
+
+  /// Fetch all users with role 'ofrecedor' or 'admin'.
+  static Future<List<Map<String, dynamic>>> fetchOfrecedores() async {
+    try {
+      final resp = await client
+          .from('users')
+          .select()
+          .or('role.eq.ofrecedor,role.eq.admin')
+          .order('first_name', ascending: true);
+      return List<Map<String, dynamic>>.from(resp);
+    } catch (e) {
+      debugPrint('Error fetching ofrecedores: $e');
+      return [];
+    }
+  }
+
+  /// Search ofrecedores by name (first_name or last_name).
+  static Future<List<Map<String, dynamic>>> searchOfrecedores(
+    String query,
+  ) async {
+    if (query.trim().isEmpty) return fetchOfrecedores();
+    try {
+      final pattern = '%${query.trim()}%';
+      final resp = await client
+          .from('users')
+          .select()
+          .or('role.eq.ofrecedor,role.eq.admin')
+          .or('first_name.ilike.$pattern,last_name.ilike.$pattern')
+          .order('first_name', ascending: true);
+      return List<Map<String, dynamic>>.from(resp);
+    } catch (e) {
+      debugPrint('Error searching ofrecedores: $e');
+      return [];
+    }
+  }
+
+  /// Upload a profile avatar to storage and save the public URL in the `users` table.
+  /// Returns the public URL of the uploaded image.
+  static Future<String> uploadAvatar({
+    required Uint8List bytes,
+    required String filename,
+  }) async {
+    final user = client.auth.currentUser;
+    if (user == null) throw Exception('No autenticado');
+
+    final path =
+        'avatars/${user.id}_${DateTime.now().millisecondsSinceEpoch}_$filename';
+
+    try {
+      await client.storage.from(_avatarsBucket).uploadBinary(path, bytes);
+    } catch (e) {
+      final msg = e.toString();
+      if (msg.contains('Bucket') ||
+          msg.contains('not found') ||
+          msg.contains('404')) {
+        throw Exception(
+          "Supabase Storage bucket '$_avatarsBucket' no encontrado. "
+          "Cree el bucket 'avatars' en Supabase Storage.",
+        );
+      }
+      rethrow;
+    }
+
+    final url = client.storage.from(_avatarsBucket).getPublicUrl(path);
+
+    // Save avatar_url in users table
+    await client
+        .from('users')
+        .update({'avatar_url': url})
+        .eq('auth_id', user.id);
+
+    return url;
+  }
+
+  /// Remove the current user's avatar from storage and clear avatar_url.
+  static Future<void> removeAvatar() async {
+    final user = client.auth.currentUser;
+    if (user == null) throw Exception('No autenticado');
+
+    // Get current avatar path
+    final profile = await fetchUserProfile();
+    final currentUrl = profile?['avatar_url'] as String?;
+
+    // Clear from DB
+    await client
+        .from('users')
+        .update({'avatar_url': null})
+        .eq('auth_id', user.id);
+
+    // Try to remove from storage
+    if (currentUrl != null && currentUrl.isNotEmpty) {
+      try {
+        // Extract path from URL
+        final uri = Uri.parse(currentUrl);
+        final segments = uri.pathSegments;
+        final bucketIdx = segments.indexOf(_avatarsBucket);
+        if (bucketIdx >= 0 && bucketIdx < segments.length - 1) {
+          final storagePath = segments.sublist(bucketIdx + 1).join('/');
+          await client.storage.from(_avatarsBucket).remove([storagePath]);
+        }
+      } catch (_) {
+        // ignore storage cleanup errors
+      }
     }
   }
 }

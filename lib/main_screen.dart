@@ -9,6 +9,8 @@ import 'profile_page.dart';
 import 'publish_page.dart';
 import 'messages_page.dart';
 import 'settings_page.dart';
+import 'public_profile_page.dart';
+import 'widgets/search_providers_widget.dart';
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
@@ -26,6 +28,8 @@ class _MainScreenState extends State<MainScreen> {
   int _unreadMessages = 0;
   dynamic _messagesChannel;
   Timer? _pollTimer;
+  Widget?
+  _publicProfilePage; // holds a PublicProfilePage when navigating to one
 
   @override
   void initState() {
@@ -248,6 +252,16 @@ class _MainScreenState extends State<MainScreen> {
                               children: [
                                 const SizedBox(height: 6),
                                 ..._buildSidebarButtons(context),
+                                const SizedBox(height: 12),
+                                const Divider(indent: 8, endIndent: 8),
+                                SearchProvidersWidget(
+                                  onProviderSelected: (page) {
+                                    setState(() {
+                                      _publicProfilePage = page;
+                                      _selectedIndex = 6; // public profile
+                                    });
+                                  },
+                                ),
                               ],
                             ),
                           ),
@@ -424,6 +438,9 @@ class _MainScreenState extends State<MainScreen> {
         return const MessagesPage();
       case 5:
         return const SettingsPage();
+      case 6:
+        return _publicProfilePage ??
+            const Center(child: Text('Perfil no encontrado'));
       case 1:
       default:
         return LayoutBuilder(
@@ -465,6 +482,7 @@ class _MainScreenState extends State<MainScreen> {
                 itemBuilder: (context, index) {
                   final post = _posts[index];
                   final author = _postAuthor(post);
+                  final postUserId = post['user_id']?.toString();
                   final time = _formatPostTime(post['created_at'] as String?);
                   return Card(
                     margin: EdgeInsets.zero,
@@ -497,11 +515,26 @@ class _MainScreenState extends State<MainScreen> {
                                 mainAxisAlignment:
                                     MainAxisAlignment.spaceBetween,
                                 children: [
-                                  Text(
-                                    author,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 13,
+                                  GestureDetector(
+                                    onTap: postUserId != null
+                                        ? () => _navigateToPublicProfile(
+                                            postUserId,
+                                          )
+                                        : null,
+                                    child: Text(
+                                      author,
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13,
+                                        color: postUserId != null
+                                            ? Theme.of(
+                                                context,
+                                              ).colorScheme.primary
+                                            : null,
+                                        decoration: postUserId != null
+                                            ? TextDecoration.underline
+                                            : null,
+                                      ),
                                     ),
                                   ),
                                   Text(
@@ -519,11 +552,18 @@ class _MainScreenState extends State<MainScreen> {
                               Builder(
                                 builder: (ctx) {
                                   final cs = Theme.of(ctx).colorScheme;
-                                  return Text(
-                                    '${author} · ${_timeAgoUruguay(post['created_at'] as String?)}',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: cs.onSurfaceVariant,
+                                  return GestureDetector(
+                                    onTap: postUserId != null
+                                        ? () => _navigateToPublicProfile(
+                                            postUserId,
+                                          )
+                                        : null,
+                                    child: Text(
+                                      '$author · ${_timeAgoUruguay(post['created_at'] as String?)}',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: cs.onSurfaceVariant,
+                                      ),
                                     ),
                                   );
                                 },
@@ -542,6 +582,7 @@ class _MainScreenState extends State<MainScreen> {
                 itemBuilder: (context, index) {
                   final post = _posts[index];
                   final author = _postAuthor(post);
+                  final postUserId = post['user_id']?.toString();
                   final time = _formatPostTime(post['created_at'] as String?);
                   return Card(
                     margin: const EdgeInsets.symmetric(vertical: 8),
@@ -568,11 +609,26 @@ class _MainScreenState extends State<MainScreen> {
                                 mainAxisAlignment:
                                     MainAxisAlignment.spaceBetween,
                                 children: [
-                                  Text(
-                                    author,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 13,
+                                  GestureDetector(
+                                    onTap: postUserId != null
+                                        ? () => _navigateToPublicProfile(
+                                            postUserId,
+                                          )
+                                        : null,
+                                    child: Text(
+                                      author,
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13,
+                                        color: postUserId != null
+                                            ? Theme.of(
+                                                context,
+                                              ).colorScheme.primary
+                                            : null,
+                                        decoration: postUserId != null
+                                            ? TextDecoration.underline
+                                            : null,
+                                      ),
                                     ),
                                   ),
                                   Text(
@@ -590,11 +646,18 @@ class _MainScreenState extends State<MainScreen> {
                               Builder(
                                 builder: (ctx) {
                                   final cs = Theme.of(ctx).colorScheme;
-                                  return Text(
-                                    '${author} · ${_timeAgoUruguay(post['created_at'] as String?)}',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: cs.onSurfaceVariant,
+                                  return GestureDetector(
+                                    onTap: postUserId != null
+                                        ? () => _navigateToPublicProfile(
+                                            postUserId,
+                                          )
+                                        : null,
+                                    child: Text(
+                                      '$author · ${_timeAgoUruguay(post['created_at'] as String?)}',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: cs.onSurfaceVariant,
+                                      ),
                                     ),
                                   );
                                 },
@@ -615,12 +678,24 @@ class _MainScreenState extends State<MainScreen> {
     }
   }
 
+  void _navigateToPublicProfile(String userId) {
+    setState(() {
+      _publicProfilePage = PublicProfilePage(userId: userId);
+      _selectedIndex = 6;
+    });
+  }
+
   List<Widget> _buildSidebarButtons(BuildContext context) {
     final items = [
       {
         'icon': Icons.person,
-        'tooltip': 'Perfil',
-        'action': () => _showProfileOptions(),
+        'tooltip': 'Mi perfil público',
+        'action': () {
+          final uid = SupabaseService.currentUser()?.id;
+          if (uid != null) {
+            _navigateToPublicProfile(uid);
+          }
+        },
       },
       {
         'icon': Icons.menu,
