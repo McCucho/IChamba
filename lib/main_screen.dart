@@ -435,7 +435,7 @@ class _MainScreenState extends State<MainScreen> {
       case 3:
         return const PublishPage();
       case 4:
-        return const MessagesPage();
+        return MessagesPage(onNavigateToProfile: _navigateToPublicProfile);
       case 5:
         return const SettingsPage();
       case 6:

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'services/supabase_service.dart';
+import 'public_profile_page.dart';
 
 // Parse an ISO-like timestamp and return the corresponding UTC instant.
 // If the string contains a timezone (Z or +hh:mm/-hh:mm) we parse it normally.
@@ -37,7 +38,9 @@ DateTime _parseIsoToUtc(String iso) {
 
 /// Full messaging page: conversations list + chat view (WhatsApp-style).
 class MessagesPage extends StatefulWidget {
-  const MessagesPage({super.key});
+  final void Function(String userId)? onNavigateToProfile;
+
+  const MessagesPage({super.key, this.onNavigateToProfile});
 
   @override
   State<MessagesPage> createState() => _MessagesPageState();
@@ -74,6 +77,8 @@ class _MessagesPageState extends State<MessagesPage> {
             userMap[pid]?['first_name'] ??
             userMap[pid]?['email'] ??
             pid.substring(0, 8);
+        c['partner_avatar_url'] = userMap[pid]?['avatar_url'];
+        debugPrint('[Messages] Partner ${c['partner_name']} avatar_url: ${c['partner_avatar_url']}');
         // prefer an explicit "last activity" field from users table if available
         c['partner_last_activity'] =
             userMap[pid]?['last_active'] ??
@@ -96,6 +101,12 @@ class _MessagesPageState extends State<MessagesPage> {
 
   void _openChat(Map<String, dynamic> partner) {
     setState(() => _activePartner = partner);
+  }
+
+  void _navigateToProfile(String userId) {
+    if (widget.onNavigateToProfile != null) {
+      widget.onNavigateToProfile!(userId);
+    }
   }
 
   void _closeChat() {
@@ -137,6 +148,7 @@ class _MessagesPageState extends State<MessagesPage> {
                 user['email'] ??
                 partnerId.substring(0, 8),
             'partner_email': user['email'] ?? '',
+            'partner_avatar_url': user['avatar_url'],
           });
         },
       ),
@@ -147,11 +159,14 @@ class _MessagesPageState extends State<MessagesPage> {
   Widget build(BuildContext context) {
     if (_activePartner != null) {
       final partnerLast = _activePartner!['partner_last_activity'] as String?;
+      final partnerAvatar = _activePartner!['partner_avatar_url'] as String?;
       return _ChatView(
         partnerId: _activePartner!['partner_id'] as String,
         partnerName: _activePartner!['partner_name'] as String? ?? '',
+        partnerAvatarUrl: partnerAvatar,
         partnerLastActivity: partnerLast,
         onBack: _closeChat,
+        onNavigateToProfile: _navigateToProfile,
       );
     }
 
@@ -220,6 +235,7 @@ class _MessagesPageState extends State<MessagesPage> {
                     final initial = name.isNotEmpty
                         ? name[0].toUpperCase()
                         : '';
+                    final avatarUrl = c['partner_avatar_url'] as String?;
                     final cs = Theme.of(context).colorScheme;
                     final partnerLast = c['partner_last_activity'] as String?;
                     final partnerOnline = _isPartnerOnline(partnerLast);
@@ -246,17 +262,30 @@ class _MessagesPageState extends State<MessagesPage> {
                             backgroundColor: cs.primary.withAlpha(
                               (0.08 * 255).round(),
                             ),
-                            child: initial.isNotEmpty
-                                ? Text(initial)
-                                : Icon(Icons.person, color: cs.onSurface),
+                            backgroundImage: avatarUrl != null && avatarUrl.isNotEmpty
+                                ? NetworkImage(avatarUrl)
+                                : null,
+                            child: avatarUrl == null || avatarUrl.isEmpty
+                                ? (initial.isNotEmpty
+                                    ? Text(initial)
+                                    : Icon(Icons.person, color: cs.onSurface))
+                                : null,
                           ),
-                          title: Text(
-                            c['partner_name'] as String? ?? '',
-                            style: TextStyle(
-                              fontWeight: unread > 0
-                                  ? FontWeight.bold
-                                  : FontWeight.normal,
-                              color: cs.onSurface,
+                          title: InkWell(
+                            onTap: () {
+                              final partnerId = c['partner_id'] as String?;
+                              if (partnerId != null && widget.onNavigateToProfile != null) {
+                                widget.onNavigateToProfile!(partnerId);
+                              }
+                            },
+                            child: Text(
+                              c['partner_name'] as String? ?? '',
+                              style: TextStyle(
+                                fontWeight: unread > 0
+                                    ? FontWeight.bold
+                                    : FontWeight.normal,
+                                color: cs.onSurface,
+                              ),
                             ),
                           ),
                           subtitle: Column(
@@ -453,11 +482,17 @@ class _UserPickerSheetState extends State<_UserPickerSheet> {
                       final initial = name.isNotEmpty
                           ? name[0].toUpperCase()
                           : '';
+                      final avatarUrl = u['avatar_url'] as String?;
                       return ListTile(
                         leading: CircleAvatar(
-                          child: initial.isNotEmpty
-                              ? Text(initial)
-                              : const Icon(Icons.person),
+                          backgroundImage: avatarUrl != null && avatarUrl.isNotEmpty
+                              ? NetworkImage(avatarUrl)
+                              : null,
+                          child: avatarUrl == null || avatarUrl.isEmpty
+                              ? (initial.isNotEmpty
+                                  ? Text(initial)
+                                  : const Icon(Icons.person))
+                              : null,
                         ),
                         title: Text(u['first_name'] ?? u['email'] ?? ''),
                         subtitle: Text(u['email'] ?? ''),
@@ -477,14 +512,18 @@ class _UserPickerSheetState extends State<_UserPickerSheet> {
 class _ChatView extends StatefulWidget {
   final String partnerId;
   final String partnerName;
+  final String? partnerAvatarUrl;
   final String? partnerLastActivity;
   final VoidCallback onBack;
+  final void Function(String userId)? onNavigateToProfile;
 
   const _ChatView({
     required this.partnerId,
     required this.partnerName,
+    this.partnerAvatarUrl,
     this.partnerLastActivity,
     required this.onBack,
+    this.onNavigateToProfile,
   });
 
   @override
@@ -649,37 +688,49 @@ class _ChatViewState extends State<_ChatView> {
               ),
               CircleAvatar(
                 radius: 18,
-                child: widget.partnerName.isNotEmpty
-                    ? Text(widget.partnerName[0].toUpperCase())
-                    : const Icon(Icons.person, size: 20),
+                backgroundImage: widget.partnerAvatarUrl != null && widget.partnerAvatarUrl!.isNotEmpty
+                    ? NetworkImage(widget.partnerAvatarUrl!)
+                    : null,
+                child: widget.partnerAvatarUrl == null || widget.partnerAvatarUrl!.isEmpty
+                    ? (widget.partnerName.isNotEmpty
+                        ? Text(widget.partnerName[0].toUpperCase())
+                        : const Icon(Icons.person, size: 20))
+                    : null,
               ),
               const SizedBox(width: 10),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      widget.partnerName,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 16,
+                child: InkWell(
+                  onTap: () {
+                    if (widget.onNavigateToProfile != null) {
+                      widget.onNavigateToProfile!(widget.partnerId);
+                    }
+                  },
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        widget.partnerName,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 16,
+                        ),
+                        overflow: TextOverflow.ellipsis,
                       ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      partnerOnline
-                          ? 'En línea'
-                          : 'Últ. conexión: ${_formatUruguayActivityLocal(partnerLast)}',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: partnerOnline ? cs.primary : cs.onSurfaceVariant,
-                        fontWeight: partnerOnline
-                            ? FontWeight.bold
-                            : FontWeight.normal,
+                      const SizedBox(height: 2),
+                      Text(
+                        partnerOnline
+                            ? 'En línea'
+                            : 'Últ. conexión: ${_formatUruguayActivityLocal(partnerLast)}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: partnerOnline ? cs.primary : cs.onSurfaceVariant,
+                          fontWeight: partnerOnline
+                              ? FontWeight.bold
+                              : FontWeight.normal,
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ],

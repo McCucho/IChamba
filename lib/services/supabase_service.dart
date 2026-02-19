@@ -395,7 +395,7 @@ class SupabaseService {
       // Query public.users table - RLS must allow SELECT for authenticated users
       final resp = await client
           .from('users')
-          .select('id, auth_id, email, first_name')
+          .select('id, auth_id, email, first_name, avatar_url')
           .order('first_name', ascending: true);
 
       final all = List<Map<String, dynamic>>.from(resp);

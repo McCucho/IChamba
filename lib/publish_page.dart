@@ -117,58 +117,95 @@ class _PublishPageState extends State<PublishPage> {
     );
     Uint8List? newImageBytes;
     String? newImageName;
+    bool isSaving = false;
 
     final res = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Editar publicación'),
-        content: SingleChildScrollView(
-          child: Column(
-            children: [
-              TextField(controller: descController, maxLines: 3),
-              const SizedBox(height: 8),
-              ElevatedButton.icon(
-                onPressed: () async {
-                  final r = await FilePicker.platform.pickFiles(
-                    type: FileType.image,
-                    withData: true,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Editar publicación'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(controller: descController, maxLines: 3),
+                const SizedBox(height: 8),
+                ElevatedButton.icon(
+                  onPressed: isSaving ? null : () async {
+                    final r = await FilePicker.platform.pickFiles(
+                      type: FileType.image,
+                      withData: true,
+                    );
+                    if (r == null) return;
+                    final f = r.files.first;
+                    setDialogState(() {
+                      newImageBytes = f.bytes;
+                      newImageName = f.name;
+                    });
+                  },
+                  icon: const Icon(Icons.photo_library),
+                  label: const Text('Reemplazar imagen (opcional)'),
+                ),
+                if (newImageName != null) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    'Nueva imagen: $newImageName',
+                    style: const TextStyle(fontSize: 12, color: Colors.green),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: isSaving ? null : () => Navigator.pop(context, false),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              onPressed: isSaving ? null : () async {
+                setDialogState(() => isSaving = true);
+                try {
+                  // perform update
+                  await SupabaseService.updatePost(
+                    postId: post['auth_id'],
+                    description: descController.text.trim(),
+                    bytes: newImageBytes,
+                    filename: newImageName,
                   );
-                  if (r == null) return;
-                  final f = r.files.first;
-                  newImageBytes = f.bytes;
-                  newImageName = f.name;
-                },
-                icon: const Icon(Icons.photo_library),
-                label: const Text('Reemplazar imagen (opcional)'),
-              ),
-            ],
-          ),
+                  if (!context.mounted) return;
+                  Navigator.pop(context, true);
+                } catch (e) {
+                  setDialogState(() => isSaving = false);
+                  if (!context.mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Error al actualizar: $e')),
+                  );
+                }
+              },
+              child: isSaving 
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Text('Guardar'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancelar'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              // perform update
-              await SupabaseService.updatePost(
-                postId: post['auth_id'],
-                description: descController.text.trim(),
-                bytes: newImageBytes,
-                filename: newImageName,
-              );
-              if (!context.mounted) return;
-              Navigator.pop(context, true);
-            },
-            child: const Text('Guardar'),
-          ),
-        ],
       ),
     );
 
-    if (res == true) await _loadMyPosts();
-    SelectedImageStore.instance.notifyPostsChanged();
+    if (res == true) {
+      await _loadMyPosts();
+      SelectedImageStore.instance.notifyPostsChanged();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Publicación actualizada')),
+      );
+    }
   }
 
   @override
