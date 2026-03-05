@@ -10,7 +10,8 @@ class ProfilePage extends StatefulWidget {
   State<ProfilePage> createState() => _ProfilePageState();
 }
 
-class _ProfilePageState extends State<ProfilePage> with RouteAware { // <--- changed
+class _ProfilePageState extends State<ProfilePage> with RouteAware {
+  // <--- changed
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _lastNameController = TextEditingController();
@@ -65,10 +66,10 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware { // <--- cha
     if (!mounted) return;
     setState(() => _loading = true);
     try {
-      await SupabaseService.waitForInitialAuth().catchError((_) => null);
+      await SupabaseService.waitForInitialAuth().catchError((_) => false);
 
       final current = SupabaseService.currentUser();
-      
+
       if (current == null) {
         debugPrint('⚠️ No hay usuario autenticado');
         return;
@@ -78,9 +79,9 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware { // <--- cha
 
       // Fetch profile directly from users table
       final row = await SupabaseService.fetchUserProfile();
-      
+
       if (!mounted) return;
-      
+
       if (row != null) {
         debugPrint('✅ Datos cargados desde tabla users');
         debugPrint('📋 Datos completos: $row');
@@ -108,22 +109,22 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware { // <--- cha
           'role': 'usuario',
           'role_request': null,
         });
-        
+
         if (!mounted) return;
         setState(() {
           _emailController.text = current.email ?? '';
           _role = 'usuario';
         });
-        
+
         debugPrint('✅ Perfil inicial creado');
       }
     } catch (e, stack) {
       debugPrint('❌ Error en _loadProfile: $e');
       debugPrint('Stack: $stack');
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error al cargar perfil: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error al cargar perfil: $e')));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -162,40 +163,16 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware { // <--- cha
     }
   }
 
-  Future<void> _requestRole(String requestedRole) async {
-    setState(() => _loading = true);
-    try {
-      final current = SupabaseService.currentUser();
-      final data = <String, dynamic>{
-        'role_request': requestedRole,
-      };
-      if (current?.id != null) data['auth_id'] = current!.id;
-      await SupabaseService.upsertUser(data);
-      setState(() {
-        _roleRequest = requestedRole;
-      });
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Solicitud enviada para ser "$requestedRole"')));
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Error: $e')));
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
-    final roleDisplay = {
-      'usuario': 'Usuario',
-      'autenticado': 'Autenticado',
-      'ofrecedor': 'Ofrecedor',
-      'admin': 'Administrador',
-    }[_role] ?? _role;
+    final roleDisplay =
+        {
+          'usuario': 'Usuario',
+          'autenticado': 'Autenticado',
+          'ofrecedor': 'Ofrecedor',
+          'admin': 'Administrador',
+        }[_role] ??
+        _role;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Perfil')),
@@ -220,8 +197,9 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware { // <--- cha
               TextFormField(
                 controller: _lastNameController,
                 decoration: const InputDecoration(labelText: 'Apellido'),
-                validator: (v) =>
-                    v != null && v.trim().isNotEmpty ? null : 'Ingrese apellido',
+                validator: (v) => v != null && v.trim().isNotEmpty
+                    ? null
+                    : 'Ingrese apellido',
               ),
               const SizedBox(height: 12),
               TextFormField(
@@ -254,7 +232,10 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware { // <--- cha
               const SizedBox(height: 20),
               Row(
                 children: [
-                  const Text('Rol: ', style: TextStyle(fontWeight: FontWeight.bold)),
+                  const Text(
+                    'Rol: ',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
                   Text(roleDisplay, style: const TextStyle(color: Colors.grey)),
                 ],
               ),
@@ -276,7 +257,10 @@ class _ProfilePageState extends State<ProfilePage> with RouteAware { // <--- cha
                     ? const SizedBox(
                         width: 20,
                         height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
                       )
                     : const Text('Guardar'),
               ),

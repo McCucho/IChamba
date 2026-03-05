@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'services/supabase_service.dart';
-import 'public_profile_page.dart';
 
 // Parse an ISO-like timestamp and return the corresponding UTC instant.
 // If the string contains a timezone (Z or +hh:mm/-hh:mm) we parse it normally.
@@ -78,7 +77,9 @@ class _MessagesPageState extends State<MessagesPage> {
             userMap[pid]?['email'] ??
             pid.substring(0, 8);
         c['partner_avatar_url'] = userMap[pid]?['avatar_url'];
-        debugPrint('[Messages] Partner ${c['partner_name']} avatar_url: ${c['partner_avatar_url']}');
+        debugPrint(
+          '[Messages] Partner ${c['partner_name']} avatar_url: ${c['partner_avatar_url']}',
+        );
         // prefer an explicit "last activity" field from users table if available
         c['partner_last_activity'] =
             userMap[pid]?['last_active'] ??
@@ -262,29 +263,41 @@ class _MessagesPageState extends State<MessagesPage> {
                             backgroundColor: cs.primary.withAlpha(
                               (0.08 * 255).round(),
                             ),
-                            backgroundImage: avatarUrl != null && avatarUrl.isNotEmpty
+                            backgroundImage:
+                                avatarUrl != null && avatarUrl.isNotEmpty
                                 ? NetworkImage(avatarUrl)
                                 : null,
                             child: avatarUrl == null || avatarUrl.isEmpty
                                 ? (initial.isNotEmpty
-                                    ? Text(initial)
-                                    : Icon(Icons.person, color: cs.onSurface))
+                                      ? Text(initial)
+                                      : Icon(Icons.person, color: cs.onSurface))
                                 : null,
                           ),
                           title: InkWell(
                             onTap: () {
                               final partnerId = c['partner_id'] as String?;
-                              if (partnerId != null && widget.onNavigateToProfile != null) {
+                              if (partnerId != null &&
+                                  widget.onNavigateToProfile != null) {
                                 widget.onNavigateToProfile!(partnerId);
                               }
                             },
-                            child: Text(
-                              c['partner_name'] as String? ?? '',
-                              style: TextStyle(
-                                fontWeight: unread > 0
-                                    ? FontWeight.bold
-                                    : FontWeight.normal,
-                                color: cs.onSurface,
+                            borderRadius: BorderRadius.circular(4),
+                            child: Tooltip(
+                              message: 'Ver perfil',
+                              child: Text(
+                                c['partner_name'] as String? ?? '',
+                                style: TextStyle(
+                                  fontWeight: unread > 0
+                                      ? FontWeight.bold
+                                      : FontWeight.normal,
+                                  color: widget.onNavigateToProfile != null
+                                      ? cs.primary
+                                      : cs.onSurface,
+                                  decoration: widget.onNavigateToProfile != null
+                                      ? TextDecoration.underline
+                                      : null,
+                                  decorationColor: cs.primary,
+                                ),
                               ),
                             ),
                           ),
@@ -365,20 +378,6 @@ class _MessagesPageState extends State<MessagesPage> {
         ),
       ],
     );
-  }
-
-  String _formatTime(String? iso) {
-    if (iso == null) return '';
-    try {
-      final dt = DateTime.parse(iso).toLocal();
-      final now = DateTime.now();
-      if (dt.year == now.year && dt.month == now.month && dt.day == now.day) {
-        return '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
-      }
-      return '${dt.day}/${dt.month}';
-    } catch (_) {
-      return '';
-    }
   }
 
   String _formatUruguayActivity(String? iso) {
@@ -485,13 +484,14 @@ class _UserPickerSheetState extends State<_UserPickerSheet> {
                       final avatarUrl = u['avatar_url'] as String?;
                       return ListTile(
                         leading: CircleAvatar(
-                          backgroundImage: avatarUrl != null && avatarUrl.isNotEmpty
+                          backgroundImage:
+                              avatarUrl != null && avatarUrl.isNotEmpty
                               ? NetworkImage(avatarUrl)
                               : null,
                           child: avatarUrl == null || avatarUrl.isEmpty
                               ? (initial.isNotEmpty
-                                  ? Text(initial)
-                                  : const Icon(Icons.person))
+                                    ? Text(initial)
+                                    : const Icon(Icons.person))
                               : null,
                         ),
                         title: Text(u['first_name'] ?? u['email'] ?? ''),
@@ -686,50 +686,70 @@ class _ChatViewState extends State<_ChatView> {
                 onPressed: widget.onBack,
                 tooltip: 'Volver',
               ),
-              CircleAvatar(
-                radius: 18,
-                backgroundImage: widget.partnerAvatarUrl != null && widget.partnerAvatarUrl!.isNotEmpty
-                    ? NetworkImage(widget.partnerAvatarUrl!)
+              GestureDetector(
+                onTap: widget.onNavigateToProfile != null
+                    ? () => widget.onNavigateToProfile!(widget.partnerId)
                     : null,
-                child: widget.partnerAvatarUrl == null || widget.partnerAvatarUrl!.isEmpty
-                    ? (widget.partnerName.isNotEmpty
-                        ? Text(widget.partnerName[0].toUpperCase())
-                        : const Icon(Icons.person, size: 20))
-                    : null,
+                child: CircleAvatar(
+                  radius: 18,
+                  backgroundImage:
+                      widget.partnerAvatarUrl != null &&
+                          widget.partnerAvatarUrl!.isNotEmpty
+                      ? NetworkImage(widget.partnerAvatarUrl!)
+                      : null,
+                  child:
+                      widget.partnerAvatarUrl == null ||
+                          widget.partnerAvatarUrl!.isEmpty
+                      ? (widget.partnerName.isNotEmpty
+                            ? Text(widget.partnerName[0].toUpperCase())
+                            : const Icon(Icons.person, size: 20))
+                      : null,
+                ),
               ),
               const SizedBox(width: 10),
               Expanded(
                 child: InkWell(
-                  onTap: () {
-                    if (widget.onNavigateToProfile != null) {
-                      widget.onNavigateToProfile!(widget.partnerId);
-                    }
-                  },
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        widget.partnerName,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w600,
-                          fontSize: 16,
+                  onTap: widget.onNavigateToProfile != null
+                      ? () => widget.onNavigateToProfile!(widget.partnerId)
+                      : null,
+                  borderRadius: BorderRadius.circular(6),
+                  child: Tooltip(
+                    message: 'Ver perfil',
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          widget.partnerName,
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 16,
+                            color: widget.onNavigateToProfile != null
+                                ? cs.primary
+                                : null,
+                            decoration: widget.onNavigateToProfile != null
+                                ? TextDecoration.underline
+                                : null,
+                            decorationColor: cs.primary,
+                          ),
+                          overflow: TextOverflow.ellipsis,
                         ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        partnerOnline
-                            ? 'En línea'
-                            : 'Últ. conexión: ${_formatUruguayActivityLocal(partnerLast)}',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: partnerOnline ? cs.primary : cs.onSurfaceVariant,
-                          fontWeight: partnerOnline
-                              ? FontWeight.bold
-                              : FontWeight.normal,
+                        const SizedBox(height: 2),
+                        Text(
+                          partnerOnline
+                              ? 'En línea'
+                              : 'Últ. conexión: ${_formatUruguayActivityLocal(partnerLast)}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: partnerOnline
+                                ? cs.primary
+                                : cs.onSurfaceVariant,
+                            fontWeight: partnerOnline
+                                ? FontWeight.bold
+                                : FontWeight.normal,
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),

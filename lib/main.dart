@@ -1,12 +1,10 @@
-﻿// ignore_for_file: avoid_print
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'login_page.dart';
 import 'main_screen.dart';
 import 'register_page.dart';
 import 'profile_page.dart';
 import 'services/supabase_service.dart';
 import 'supabase_config.dart';
-import 'route_observer.dart'; // <--- added
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -22,11 +20,9 @@ class IchambaApp extends StatelessWidget {
     return MaterialApp(
       title: 'Ichamba',
       theme: ThemeData.from(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.brown),
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),
         useMaterial3: true,
       ),
-      initialRoute: '/',
-      navigatorObservers: [routeObserver], // <--- added
       routes: {
         '/': (context) => const AuthGate(),
         '/login': (context) => const LoginPage(),

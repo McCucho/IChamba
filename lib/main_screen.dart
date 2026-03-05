@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:typed_data';
 import 'dart:async';
-import 'package:file_picker/file_picker.dart';
 import 'services/supabase_service.dart';
 import 'services/selected_image_store.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -10,6 +9,7 @@ import 'publish_page.dart';
 import 'messages_page.dart';
 import 'settings_page.dart';
 import 'public_profile_page.dart';
+import 'post_detail_page.dart';
 import 'widgets/search_providers_widget.dart';
 
 class MainScreen extends StatefulWidget {
@@ -103,6 +103,7 @@ class _MainScreenState extends State<MainScreen> {
           if (uid != null && userMap.containsKey(uid)) {
             p['author_name'] =
                 userMap[uid]?['first_name'] ?? userMap[uid]?['email'] ?? uid;
+            p['author_avatar_url'] = userMap[uid]?['avatar_url'];
           } else if (uid != null) {
             p['author_name'] = uid;
           }
@@ -374,60 +375,6 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 
-  Widget _buildIconGrid() {
-    final items = List.generate(24, (index) => 'Opción ${index + 1}');
-
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final width = constraints.maxWidth;
-        int crossAxisCount = (width / 220).floor();
-        if (crossAxisCount < 1) crossAxisCount = 1;
-        if (crossAxisCount > 6) crossAxisCount = 6;
-
-        return GridView.builder(
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: crossAxisCount,
-            mainAxisSpacing: 12,
-            crossAxisSpacing: 12,
-            childAspectRatio: 0.9,
-          ),
-          itemCount: items.length,
-          itemBuilder: (context, index) {
-            final label = items[index];
-            return Card(
-              elevation: 2,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: InkWell(
-                onTap: () {},
-                child: Padding(
-                  padding: const EdgeInsets.all(8.0),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.apps,
-                        size: 36,
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        label,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(fontSize: 14),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
   Widget _buildContentForIndex() {
     switch (_selectedIndex) {
       case 0:
@@ -487,91 +434,121 @@ class _MainScreenState extends State<MainScreen> {
                   return Card(
                     margin: EdgeInsets.zero,
                     elevation: 2,
+                    clipBehavior: Clip.antiAlias,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (post['image_url'] != null)
-                          Expanded(
-                            child: ClipRRect(
-                              borderRadius: const BorderRadius.vertical(
-                                top: Radius.circular(12),
-                              ),
-                              child: Image.network(
-                                post['image_url'] as String,
-                                width: double.infinity,
-                                fit: BoxFit.cover,
-                              ),
-                            ),
+                    child: InkWell(
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => PostDetailPage(
+                            post: post,
+                            authorName: author,
+                            authorAvatarUrl:
+                                post['author_avatar_url'] as String?,
                           ),
-                        Padding(
-                          padding: const EdgeInsets.all(12.0),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (post['image_url'] != null)
+                            Expanded(
+                              child: Stack(
+                                fit: StackFit.expand,
                                 children: [
-                                  GestureDetector(
-                                    onTap: postUserId != null
-                                        ? () => _navigateToPublicProfile(
-                                            postUserId,
-                                          )
-                                        : null,
-                                    child: Text(
-                                      author,
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 13,
-                                        color: postUserId != null
-                                            ? Theme.of(
-                                                context,
-                                              ).colorScheme.primary
-                                            : null,
-                                        decoration: postUserId != null
-                                            ? TextDecoration.underline
-                                            : null,
-                                      ),
-                                    ),
+                                  Image.network(
+                                    post['image_url'] as String,
+                                    width: double.infinity,
+                                    fit: BoxFit.cover,
                                   ),
-                                  Text(
-                                    time,
-                                    style: const TextStyle(
-                                      fontSize: 11,
-                                      color: Colors.black54,
+                                  Positioned(
+                                    top: 8,
+                                    right: 8,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 4,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: Colors.black54,
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: const Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(
+                                            Icons.open_in_full,
+                                            size: 13,
+                                            color: Colors.white,
+                                          ),
+                                          SizedBox(width: 4),
+                                          Text(
+                                            'Ver detalle',
+                                            style: TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 11,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
                                     ),
                                   ),
                                 ],
                               ),
-                              const SizedBox(height: 8),
-                              Text(post['description'] ?? ''),
-                              const SizedBox(height: 8),
-                              Builder(
-                                builder: (ctx) {
-                                  final cs = Theme.of(ctx).colorScheme;
-                                  return GestureDetector(
-                                    onTap: postUserId != null
-                                        ? () => _navigateToPublicProfile(
-                                            postUserId,
-                                          )
-                                        : null,
-                                    child: Text(
-                                      '$author · ${_timeAgoUruguay(post['created_at'] as String?)}',
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        color: cs.onSurfaceVariant,
+                            ),
+                          Padding(
+                            padding: const EdgeInsets.all(12.0),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    GestureDetector(
+                                      onTap: postUserId != null
+                                          ? () => _navigateToPublicProfile(
+                                              postUserId,
+                                            )
+                                          : null,
+                                      child: Text(
+                                        author,
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 13,
+                                          color: postUserId != null
+                                              ? Theme.of(
+                                                  context,
+                                                ).colorScheme.primary
+                                              : null,
+                                          decoration: postUserId != null
+                                              ? TextDecoration.underline
+                                              : null,
+                                        ),
                                       ),
                                     ),
-                                  );
-                                },
-                              ),
-                            ],
+                                    Text(
+                                      time,
+                                      style: const TextStyle(
+                                        fontSize: 11,
+                                        color: Colors.black54,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  post['description'] ?? '',
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   );
                 },
@@ -587,85 +564,134 @@ class _MainScreenState extends State<MainScreen> {
                   return Card(
                     margin: const EdgeInsets.symmetric(vertical: 8),
                     elevation: 2,
+                    clipBehavior: Clip.antiAlias,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (post['image_url'] != null)
-                          Image.network(
-                            post['image_url'] as String,
-                            width: double.infinity,
-                            height: 220,
-                            fit: BoxFit.cover,
+                    child: InkWell(
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => PostDetailPage(
+                            post: post,
+                            authorName: author,
+                            authorAvatarUrl:
+                                post['author_avatar_url'] as String?,
                           ),
-                        Padding(
-                          padding: const EdgeInsets.all(12.0),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  GestureDetector(
-                                    onTap: postUserId != null
-                                        ? () => _navigateToPublicProfile(
-                                            postUserId,
-                                          )
-                                        : null,
-                                    child: Text(
-                                      author,
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 13,
-                                        color: postUserId != null
-                                            ? Theme.of(
-                                                context,
-                                              ).colorScheme.primary
-                                            : null,
-                                        decoration: postUserId != null
-                                            ? TextDecoration.underline
-                                            : null,
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (post['image_url'] != null)
+                            Stack(
+                              children: [
+                                Image.network(
+                                  post['image_url'] as String,
+                                  width: double.infinity,
+                                  height: 220,
+                                  fit: BoxFit.cover,
+                                ),
+                                Positioned(
+                                  top: 8,
+                                  right: 8,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 4,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.black54,
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: const Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(
+                                          Icons.open_in_full,
+                                          size: 13,
+                                          color: Colors.white,
+                                        ),
+                                        SizedBox(width: 4),
+                                        Text(
+                                          'Ver detalle',
+                                          style: TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 11,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          Padding(
+                            padding: const EdgeInsets.all(12.0),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    GestureDetector(
+                                      onTap: postUserId != null
+                                          ? () => _navigateToPublicProfile(
+                                              postUserId,
+                                            )
+                                          : null,
+                                      child: Text(
+                                        author,
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 13,
+                                          color: postUserId != null
+                                              ? Theme.of(
+                                                  context,
+                                                ).colorScheme.primary
+                                              : null,
+                                          decoration: postUserId != null
+                                              ? TextDecoration.underline
+                                              : null,
+                                        ),
                                       ),
                                     ),
-                                  ),
-                                  Text(
-                                    time,
-                                    style: const TextStyle(
-                                      fontSize: 11,
-                                      color: Colors.black54,
+                                    Text(
+                                      time,
+                                      style: const TextStyle(
+                                        fontSize: 11,
+                                        color: Colors.black54,
+                                      ),
                                     ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 8),
-                              Text(post['description'] ?? ''),
-                              const SizedBox(height: 8),
-                              Builder(
-                                builder: (ctx) {
-                                  final cs = Theme.of(ctx).colorScheme;
-                                  return GestureDetector(
-                                    onTap: postUserId != null
-                                        ? () => _navigateToPublicProfile(
-                                            postUserId,
-                                          )
-                                        : null,
-                                    child: Text(
-                                      '$author · ${_timeAgoUruguay(post['created_at'] as String?)}',
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  post['description'] ?? '',
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                const SizedBox(height: 4),
+                                Builder(
+                                  builder: (ctx) {
+                                    final cs = Theme.of(ctx).colorScheme;
+                                    return Text(
+                                      _timeAgoUruguay(
+                                        post['created_at'] as String?,
+                                      ),
                                       style: TextStyle(
                                         fontSize: 12,
                                         color: cs.onSurfaceVariant,
                                       ),
-                                    ),
-                                  );
-                                },
-                              ),
-                            ],
+                                    );
+                                  },
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   );
                 },
@@ -843,71 +869,8 @@ class _MainScreenState extends State<MainScreen> {
     }).toList();
   }
 
-  void _showProfileOptions() {
-    showModalBottomSheet<void>(
-      context: context,
-      builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.person),
-              title: const Text('Ver perfil'),
-              onTap: () {
-                Navigator.pop(context);
-                setState(() => _selectedIndex = 0);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.photo_library),
-              title: const Text('Seleccionar foto'),
-              onTap: () {
-                Navigator.pop(context);
-                _pickProfileImage();
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.delete_forever),
-              title: const Text('Quitar foto'),
-              onTap: () {
-                Navigator.pop(context);
-                SelectedImageStore.instance.clear();
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   void _onPostsChanged() {
     _loadPosts();
-  }
-
-  Future<void> _pickProfileImage() async {
-    try {
-      final res = await FilePicker.platform.pickFiles(
-        type: FileType.image,
-        withData: true,
-      );
-      if (res == null) return;
-      final file = res.files.first;
-
-      if (file.bytes != null) {
-        SelectedImageStore.instance.setImage(file.bytes!, file.name);
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Imagen seleccionada (no se guarda en el servidor)'),
-          ),
-        );
-      }
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error al seleccionar imagen: $e')),
-      );
-    }
   }
 
   @override

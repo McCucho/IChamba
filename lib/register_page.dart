@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
-import 'services/credentials_store.dart';
 import 'services/supabase_service.dart';
-import 'main_screen.dart';
 
 class RegisterPage extends StatefulWidget {
   const RegisterPage({super.key});
@@ -18,7 +16,6 @@ class _RegisterPageState extends State<RegisterPage> {
   final _lastNameController = TextEditingController();
   bool _loading = false;
   String? _error;
-  String _lastAction = '';
 
   Future<void> _register() async {
     if (!_formKey.currentState!.validate()) return;
@@ -49,7 +46,7 @@ class _RegisterPageState extends State<RegisterPage> {
           'role': 'usuario',
           'role_request': null,
         });
-        
+
         if (!mounted) return;
         Navigator.of(context).pushReplacementNamed('/login');
       }
@@ -81,8 +78,9 @@ class _RegisterPageState extends State<RegisterPage> {
               TextFormField(
                 controller: _lastNameController,
                 decoration: const InputDecoration(labelText: 'Apellido'),
-                validator: (v) =>
-                    v != null && v.trim().isNotEmpty ? null : 'Ingrese apellido',
+                validator: (v) => v != null && v.trim().isNotEmpty
+                    ? null
+                    : 'Ingrese apellido',
               ),
               const SizedBox(height: 12),
               TextFormField(
@@ -102,8 +100,14 @@ class _RegisterPageState extends State<RegisterPage> {
               const SizedBox(height: 20),
               Row(
                 children: [
-                  const Text('Rol: ', style: TextStyle(fontWeight: FontWeight.bold)),
-                  const Text('usuario (por defecto)', style: TextStyle(color: Colors.grey)),
+                  const Text(
+                    'Rol: ',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  const Text(
+                    'usuario (por defecto)',
+                    style: TextStyle(color: Colors.grey),
+                  ),
                 ],
               ),
               const SizedBox(height: 20),
@@ -114,15 +118,8 @@ class _RegisterPageState extends State<RegisterPage> {
                 onPressed: _loading
                     ? null
                     : () {
-                        setState(() {
-                          _lastAction = 'Registrarse pressed';
-                        });
                         if (_formKey.currentState!.validate()) {
                           _register();
-                        } else {
-                          setState(() {
-                            _lastAction = 'Validación fallida';
-                          });
                         }
                       },
                 child: _loading
